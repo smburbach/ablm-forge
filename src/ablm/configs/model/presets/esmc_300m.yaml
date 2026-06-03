@@ -1,0 +1,8 @@
+# ESM-C 300M (EvolutionaryScale Cambrian) exact dimensions.
+# Architecture (Pre-LN, RoPE, SwiGLU, bias-free, no QK-norm / residual scaling)
+# comes from configs/model/base.yaml; this preset only pins the size.
+model:
+  hidden_size: 960
+  num_hidden_layers: 30
+  num_attention_heads: 15
+  max_position_embeddings: 2048
