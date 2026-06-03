@@ -1,7 +1,7 @@
 # Agent Instructions for ablm-forge
 
 Lab base model-architecture repo for antibody/protein language-model
-experiments. An ESM-style bidirectional encoder (ported from `oplm`) wired to
+experiments. An ESM-style bidirectional encoder wired to
 the stock HuggingFace `Trainer`, launched via `torchrun` + FSDP2, with
 SDPA-based attention and a pluggable optimizer registry.
 

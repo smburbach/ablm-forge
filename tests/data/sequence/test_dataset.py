@@ -1,4 +1,4 @@
-"""Tests for the iterable sequence datasets (Phase 3).
+"""Tests for the iterable sequence datasets.
 
 Covers the reproducibility contract (same ``(seed, epoch)`` ⇒ identical order),
 explicit rank/worker striping (disjoint, gap-free coverage), interleaved

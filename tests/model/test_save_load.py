@@ -1,4 +1,4 @@
-"""save_pretrained / from_pretrained round-trips for every task class (Phase 14.2)."""
+"""save_pretrained / from_pretrained round-trips for every task class."""
 
 from __future__ import annotations
 

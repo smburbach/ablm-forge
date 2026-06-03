@@ -85,7 +85,7 @@ class CanonConv(nn.Module):
 def resolve_canon_kernel_sizes(spec: Any, num_hidden_layers: int) -> list[int]:
     """Expand `canon_kernel_sizes` into a per-layer `list[int]`.
 
-    Accepts the three forms documented in the architecture doc:
+    Accepts three forms:
 
     * `int` — broadcast across every layer.
     * `list[int]` — must already have length `num_hidden_layers`.

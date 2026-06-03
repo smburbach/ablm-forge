@@ -24,8 +24,8 @@ class LogitsConfig:
             with the full per-layer hidden-state tuple (post-embedding plus
             one tensor per `AblmBlock`).
         return_attentions: When True, populate `LogitsOutput.attentions` with
-            the per-layer attention weights. Forces the manual fallback
-            attention kernel (see `docs/MODEL_ARCHITECTURE.md` §6.5).
+            the per-layer attention weights. Forces the manual-softmax attention
+            path (SDPA cannot return weights).
     """
 
     sequence: bool = True

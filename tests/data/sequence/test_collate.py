@@ -1,8 +1,8 @@
-"""Tests for the pad/tokenize primitive and the MLM collator (Phase 4).
+"""Tests for the pad/tokenize primitive and the MLM collator.
 
 Covers the batch contract, fixed-``k`` Gumbel-top-k selection, the BERT 80/10/10
 replacement split, RoBERTa-dynamic vs. evaluation-deterministic behavior, and the
-optional per-residue weighted-masking path (docs/DATA_TOOLING.md §4.4-§4.6).
+optional per-residue weighted-masking path.
 
 Sequences are real human proteins (standard amino acids only) so masked-position
 ids always fall inside the canonical AA block; weighted-masking tests construct

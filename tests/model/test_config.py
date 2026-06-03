@@ -238,11 +238,11 @@ def test_non_default_vocab_emits_warning():
 def test_pretrained_config_kwargs_forwarded():
     cfg = AblmConfig(
         architectures=["AblmForMaskedLM"],
-        _name_or_path="brineylab/ablm-base",
+        _name_or_path="smburbach/ablm-forge",
     )
     # Both attrs come from PretrainedConfig.__init__'s kwargs handling.
     assert cfg.architectures == ["AblmForMaskedLM"]
-    assert cfg._name_or_path == "brineylab/ablm-base"
+    assert cfg._name_or_path == "smburbach/ablm-forge"
 
 
 def test_tie_word_embeddings_forwarded_to_base_class():

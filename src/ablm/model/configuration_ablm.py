@@ -38,8 +38,8 @@ class AblmConfig(PretrainedConfig):
     """Configuration for the ABLM family of encoder-only protein language models.
 
     Maps 1:1 to the `model:` block of the project YAML schema and to the
-    constructor kwargs of every `Ablm*` class. See
-    `docs/MODEL_ARCHITECTURE.md` §12 for the field reference and validation rules.
+    constructor kwargs of every `Ablm*` class. The field reference and
+    validation rules live in `_validate` below.
     """
 
     model_type = "ablm"

@@ -1,4 +1,4 @@
-"""Auto-class resolution without trust_remote_code (Phase 14.3).
+"""Auto-class resolution without trust_remote_code.
 
 `import ablm` registers every Ablm* class with the HF Auto registry, so a plain
 `AutoModelForMaskedLM.from_pretrained(<dir>)` must resolve to the concrete class

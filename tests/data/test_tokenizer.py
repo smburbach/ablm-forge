@@ -1,7 +1,7 @@
-"""Tests for the tokenizer access layer (Phase 2).
+"""Tests for the tokenizer access layer.
 
-The parity guard is the regression test that would have caught the legacy
-off-by-one vocabulary bug (docs/DATA_TOOLING.md §3.5): every derived constant is
+The parity guard is a regression test against an off-by-one vocabulary bug:
+every derived constant is
 checked against the canonical :class:`~ablm.model.AblmTokenizerFast`. The
 alignment tests pin :func:`~ablm.data.tokenizer.align_per_residue` to the
 ``<cls> … <eos>`` / truncation / padding rules it must mirror.

@@ -1,4 +1,4 @@
-"""Gradient checkpointing is numerically transparent (Phase 14.7).
+"""Gradient checkpointing is numerically transparent.
 
 With and without `gradient_checkpointing`, a fixed-seed forward + backward must
 produce matching outputs and matching parameter grads. Checkpointing only fires

@@ -32,7 +32,7 @@ def is_no_decay_param(name: str, param: torch.Tensor) -> bool:
     """Whether a parameter should use the no-weight-decay AdamW group.
 
     Biases and norm gains/shifts (`ndim <= 1`) and embeddings never get weight
-    decay — matching the original OPLM grouping rules.
+    decay.
     """
     return param.ndim <= 1 or "embed" in name
 

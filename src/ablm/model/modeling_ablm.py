@@ -1,8 +1,8 @@
 """All public Ablm* model classes — single file for trust_remote_code compatibility.
 
-The architecture doc keeps every public model class in one module so that
-`auto_map` + `trust_remote_code` loading works without chasing imports across
-files. Internal building blocks live in their own modules and are imported here.
+Every public model class lives in one module so that `auto_map` +
+`trust_remote_code` loading works without chasing imports across files. Internal
+building blocks live in their own modules and are imported here.
 """
 
 from __future__ import annotations
@@ -69,7 +69,7 @@ class AblmPreTrainedModel(PreTrainedModel):
     _supports_sdpa = True
 
     def _init_weights(self, module: nn.Module) -> None:
-        """Initialize weights per §15.1 of the architecture doc.
+        """Initialize weights (truncated normal; residual-writer scaling).
 
         Residual-stream-writing projections (attention `o_proj`, FFN
         `down_proj`) are marked `_is_residual_writer = True` in their parent

@@ -9,7 +9,7 @@ description = "Lab base model-architecture repo for antibody/protein language-mo
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
-authors = [{ name = "Bryan Briney", email = "briney@scripps.edu" }]
+authors = [{ name = "Sarah Burbach", email = "sburbach@scripps.edu" }]
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
     "Intended Audience :: Science/Research",
@@ -57,9 +57,9 @@ dev = [
 ablm = "ablm.cli:app"
 
 [project.urls]
-Homepage = "https://github.com/briney/ablm-forge"
-Repository = "https://github.com/briney/ablm-forge"
-Issues = "https://github.com/briney/ablm-forge/issues"
+Homepage = "https://github.com/smburbach/ablm-forge"
+Repository = "https://github.com/smburbach/ablm-forge"
+Issues = "https://github.com/smburbach/ablm-forge/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ablm"]

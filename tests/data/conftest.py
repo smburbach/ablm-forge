@@ -1,8 +1,8 @@
 """Shared fixtures for the ``ablm.data`` test suite.
 
 Provides real sequence-parquet fixtures used by the dataset/collate/loader tests:
-a tiny multi-shard parquet of *real* protein sequences (Phase 3), with an
-optional ``masking_weights`` column (Phase 4/10). Sequences are sliced from the
+a tiny multi-shard parquet of *real* protein sequences, with an
+optional ``masking_weights`` column. Sequences are sliced from the
 existing ``tests/fixtures/training/test_sequences.parquet`` so fixtures stay
 real-data-backed.
 

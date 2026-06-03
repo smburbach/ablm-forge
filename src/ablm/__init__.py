@@ -26,7 +26,7 @@ __version__ = "0.0.1"
 
 # (1) In-process registration so `import ablm` plus AutoModel*.from_pretrained
 # works without trust_remote_code. HF's `register` raises on a duplicate
-# model_type, so guard each call to keep re-imports idempotent (§13.3).
+# model_type, so guard each call to keep re-imports idempotent.
 AutoConfig.register("ablm", AblmConfig, exist_ok=True)
 AutoModel.register(AblmConfig, AblmModel, exist_ok=True)
 AutoModelForMaskedLM.register(AblmConfig, AblmForMaskedLM, exist_ok=True)

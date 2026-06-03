@@ -1,9 +1,9 @@
 """AblmTokenizerFast — ESM-C-compatible 33-token WordLevel tokenizer.
 
 ABLM uses the ESM-C 33-token vocabulary, in the same token order and with the
-same special-token IDs (see docs/MODEL_ARCHITECTURE.md §3.1). A batch tokenized
-for ESM-C is bit-for-bit identical to one tokenized for ABLM, so switching
-between the two models is mechanical at the data layer.
+same special-token IDs. A batch tokenized for ESM-C is bit-for-bit identical to
+one tokenized for ABLM, so switching between the two models is mechanical at the
+data layer.
 """
 
 from __future__ import annotations
@@ -19,9 +19,8 @@ __all__ = ["AblmTokenizerFast", "VOCAB"]
 
 
 # The 33-token ESM-C vocabulary, in exact ID order (index == token id). The
-# ordering and IDs must be bit-identical to ESM-C — see §3.1 of the model
-# architecture doc. Note the id-31 slot is `|` (chain break) in ESM-C, where
-# ESM-2 had `<null_1>`.
+# ordering and IDs must be bit-identical to ESM-C. Note the id-31 slot is `|`
+# (chain break) in ESM-C, where ESM-2 had `<null_1>`.
 _VOCAB_TOKENS: tuple[str, ...] = (
     "<cls>",  # 0  special (BOS)
     "<pad>",  # 1  special
@@ -61,7 +60,7 @@ _VOCAB_TOKENS: tuple[str, ...] = (
 # Token -> id mapping (the WordLevel vocab).
 VOCAB: dict[str, int] = {token: idx for idx, token in enumerate(_VOCAB_TOKENS)}
 
-# Explicit special-token IDs from §3.1.
+# Explicit special-token IDs.
 _CLS_TOKEN = "<cls>"
 _PAD_TOKEN = "<pad>"
 _EOS_TOKEN = "<eos>"

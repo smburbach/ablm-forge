@@ -1,4 +1,4 @@
-"""Cartesian sweep of architecture toggles, one forward + backward each (Phase 14.4).
+"""Cartesian sweep of architecture toggles, one forward + backward each.
 
 Every combination must construct, run a forward, and back-propagate a finite
 loss with a grad on every parameter. Models are kept tiny (2 layers, 64 hidden)

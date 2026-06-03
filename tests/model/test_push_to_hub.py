@@ -1,6 +1,6 @@
 """Custom-code copy + remote-loading round-trip for the ABLM auto-class hook.
 
-These exercise the ``register_for_auto_class`` file-copy step (§13.4): saving a
+These exercise the ``register_for_auto_class`` file-copy step: saving a
 model must drop the source ``.py`` files next to ``config.json`` so that a fresh
 interpreter can reload it via ``trust_remote_code=True`` without ``ablm``
 installed in the registry.

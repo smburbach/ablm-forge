@@ -1,4 +1,4 @@
-"""End-to-end forward tests across all four public task classes (Phase 14.1).
+"""End-to-end forward tests across all four public task classes.
 
 These wire-level checks catch cross-component regressions that the per-module
 tests miss: shape contracts, the hidden-states/attentions tuples, and loss

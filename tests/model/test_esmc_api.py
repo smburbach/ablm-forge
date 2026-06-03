@@ -1,4 +1,4 @@
-"""ESM-C-compatible convenience API: tokenize / encode / logits (Phase 14.5)."""
+"""ESM-C-compatible convenience API: tokenize / encode / logits."""
 
 from __future__ import annotations
 
@@ -53,7 +53,7 @@ def test_tokenize_returns_batch_encoding_on_device(model_with_tokenizer) -> None
 def test_encode_returns_input_ids_only(model_with_tokenizer) -> None:
     """`encode` is the ESM-C footgun: input_ids with no mask.
 
-    Parity against ESM-C token IDs is asserted in the tokenizer test (§11.3);
+    Parity against ESM-C token IDs is asserted in the tokenizer test;
     here we only check that `encode` returns a bare `input_ids` tensor.
     """
     model = model_with_tokenizer

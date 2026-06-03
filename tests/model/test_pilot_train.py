@@ -1,4 +1,4 @@
-"""Pilot-scale training smoke test: the full graph learns end-to-end (Phase 14.6)."""
+"""Pilot-scale training smoke test: the full graph learns end-to-end."""
 
 from __future__ import annotations
 

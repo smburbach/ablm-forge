@@ -16,8 +16,6 @@ all registered with the HuggingFace Auto* classes and carrying an ESM-C-style
 :class:`EsmcCompatMixin`. Internal building blocks (norm, rope, embedding, ffn,
 conv, attention, transformer, masking) live in their own modules and are
 re-exported here for convenience.
-
-See ``docs/MODEL_ARCHITECTURE.md`` for the full architecture specification.
 """
 
 from __future__ import annotations

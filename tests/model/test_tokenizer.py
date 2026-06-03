@@ -57,7 +57,7 @@ def test_special_token_ids(tokenizer: AblmTokenizerFast):
 
 
 def test_canonical_sanity_check(tokenizer: AblmTokenizerFast):
-    # The byte-identical-to-ESM-C example from §3.4 of the architecture doc.
+    # Byte-identical to ESM-C tokenization for the same sequence.
     assert tokenizer("MEEPQ").input_ids == [0, 20, 9, 9, 14, 16, 2]
 
 

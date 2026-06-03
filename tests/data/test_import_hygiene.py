@@ -1,4 +1,4 @@
-"""Import-hygiene guards for the ``ablm.data`` package (Phase 0.3).
+"""Import-hygiene guards for the ``ablm.data`` package.
 
 ``ablm.data`` (and every submodule) must import cleanly without pulling in
 ``ablm.eval`` — the eval harness depends on ``ablm.data``, not the reverse.
