@@ -5,7 +5,7 @@ CLI dotlist), which `load_config` resolves into:
 
 * an :class:`ablm.model.AblmConfig` (the HF model config),
 * a stock :class:`transformers.TrainingArguments` (no subclass),
-* an :class:`ablm.training.optim_registry.OptimizerSettings`, and
+* an :class:`ablm.training.optim.OptimizerSettings`, and
 * a :class:`DataConfig`.
 
 The training knobs map onto HF's native `TrainingArguments` fields — including
@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from omegaconf import DictConfig, OmegaConf
 
-from ablm.training.optim_registry import OptimizerSettings, available_optimizers, resolve_optimizer
+from ablm.training.optim import OptimizerSettings, available_optimizers, resolve_optimizer
 
 if TYPE_CHECKING:
     from transformers import TrainingArguments

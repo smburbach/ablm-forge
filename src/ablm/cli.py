@@ -41,7 +41,7 @@ def train(ctx: typer.Context) -> None:
 @app.command()
 def info() -> None:
     """Print the registered optimizers."""
-    from ablm.training.optim_registry import available_optimizers
+    from ablm.training.optim import available_optimizers
 
     typer.echo(f"ablm-forge {__version__}")
     typer.echo(f"optimizers: {', '.join(available_optimizers())}")

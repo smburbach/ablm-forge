@@ -42,9 +42,10 @@ ablm info
   manual fp32-softmax path runs only when you request `output_attentions=True`
   (SDPA can't return attention weights). Nothing to configure.
 - **Optimizer** — set `train.optimizer` to `adamw`, `adamw_fused`, `adafactor`,
-  or `muon`. Add one with `register_hf_optimizer(...)` (HF-native) or
-  `@register_custom_optimizer("name")` (custom class) in
-  `ablm/training/optim_registry.py`. No `Trainer` subclass is involved.
+  or `muon`. Add one by adding an entry to the `OPTIMIZERS` dict in
+  `ablm/training/optim.py` — either an HF `optim` string or a
+  `builder(model, settings)` for an optimizer HF doesn't ship. No `Trainer`
+  subclass is involved.
 - **LR schedule** — `train.scheduler` ∈ `warmup_linear`, `warmup_cosine`,
   `wsd_linear`, `wsd_cosine`, mapped onto HF's native `lr_scheduler_type`.
 

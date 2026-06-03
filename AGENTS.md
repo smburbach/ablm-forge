@@ -54,7 +54,7 @@ MLP FFN, which is not yet implemented — only SwiGLU is.)
   `transformers.Trainer` directly. Optimizer choice flows through HF's native
   hooks: `TrainingArguments.optim`, `lr_scheduler_type`, and the
   `optimizers=` / `optimizer_cls_and_kwargs` constructor args. New optimizers go
-  in the registry (`ablm/training/optim_registry.py`), never the Trainer.
+  in the `OPTIMIZERS` dict (`ablm/training/optim.py`), never the Trainer.
 - **Attention is SDPA + a manual fallback** in `ablm/model/attention.py`. Don't
   reintroduce a kernel registry / explicit flash-attn integration: SDPA already
   auto-selects the fused backend. (Keep attention in one file, not a subpackage —
@@ -81,9 +81,7 @@ src/ablm/
 │   ├── tokenization_ablm.py    # AblmTokenizerFast (33-token ESM-C vocab)
 │   └── modeling_ablm.py        # all public Ablm* model classes
 ├── training/
-│   ├── optim_registry.py       # name -> HF optim string | custom (cls/builder)
-│   ├── muon.py                 # CombinedOptimizer (Muon 2D + AdamW rest)
-│   └── grouping.py             # name-aware parameter partition helpers
+│   └── optim.py                # OPTIMIZERS registry + Muon CombinedOptimizer
 ├── data/                       # tokenizer + MLM dataset/collator
 ├── config.py                   # OmegaConf -> AblmConfig + TrainingArguments + ...
 ├── train.py                    # torchrun entry: build + transformers.Trainer

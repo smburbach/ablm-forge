@@ -26,7 +26,7 @@ from ablm.data.config import parse_train_configs
 from ablm.data.sequence.collate import MLMCollator
 from ablm.data.sequence.dataset import InterleavedDataset, ShardedProteinDataset
 from ablm.data.tokenizer import get_tokenizer
-from ablm.training.optim_registry import build_optimizer, resolve_optimizer
+from ablm.training.optim import build_optimizer, resolve_optimizer
 
 if TYPE_CHECKING:
     from torch.utils.data import IterableDataset
