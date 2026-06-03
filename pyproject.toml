@@ -1,0 +1,94 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ablm-forge"
+version = "0.0.1"
+description = "Lab base model-architecture repo for antibody/protein language-model experiments"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+authors = [{ name = "Bryan Briney", email = "briney@scripps.edu" }]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Typing :: Typed",
+]
+dependencies = [
+    # Upper bounds keep CI on the verified-good toolchain. torch>=2.11 ships
+    # torch.optim.Muon and the FlashAttention backend via SDPA; FSDP2 is stable
+    # from 2.6+. transformers >=5.4 shifts PretrainedConfig attribute typing so
+    # `ty` flags resolved-Optional config fields. Bump deliberately after
+    # re-running `ty check src/` + the test suite.
+    "torch>=2.11,<2.13",
+    "transformers>=4.48,<5.4",
+    "accelerate>=0.34",  # transformers' FSDP2 backend plumbing only (no accelerate launch)
+    "omegaconf>=2.3",
+    "typer>=0.9",
+    "rich>=13.0",
+    "numpy>=1.26",
+    "pyarrow>=14.0",
+    "tokenizers>=0.20",
+]
+
+[project.optional-dependencies]
+train = [
+    "wandb>=0.16",
+    "datasets>=2.18",
+    "biopython>=1.83",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.8",
+    # ty is Astral's type checker (pre-1.0/beta). Pin an EXACT version: its
+    # diagnostics shift between releases. Bump deliberately.
+    "ty==0.0.40",
+]
+
+[project.scripts]
+ablm = "ablm.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/briney/ablm-forge"
+Repository = "https://github.com/briney/ablm-forge"
+Issues = "https://github.com/briney/ablm-forge/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ablm"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "SIM", # flake8-simplify
+    "TCH", # flake8-type-checking
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["ablm"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]
+
+[tool.ty.environment]
+python-version = "3.11"
