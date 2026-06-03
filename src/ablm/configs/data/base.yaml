@@ -13,13 +13,6 @@ data:
   # parquet must have columns sequence_id, sequence.
   train: null
 
-  # Evaluation dataset(s). Named map; each entry needs `path` and `type`
-  # ("sequence" is built as an MLM eval set; other types are skipped). Eval
-  # cadence is controlled by the standard HF TrainingArguments (eval_steps).
-  #   eval:
-  #     heldout: { path: /data/eval.parquet, type: sequence }
-  eval: null
-
   # Sequence masking
   mask_prob: 0.15
   mask_token_prob: 0.8

@@ -29,16 +29,10 @@ from ablm.data.tokenizer import get_tokenizer
 from ablm.training.optim_registry import build_optimizer, resolve_optimizer
 
 if TYPE_CHECKING:
-    from torch.utils.data import Dataset, IterableDataset
+    from torch.utils.data import IterableDataset
     from transformers import Trainer
 
     from ablm.config import AblmRunConfig
-
-logger = logging.getLogger("ablm.train")
-
-# Eval-dataset types this base repo can build as MLM eval sets. Other types
-# (structure, proteingym, ...) belong to a downstream eval harness, out of scope.
-_MLM_EVAL_TYPES = frozenset({"sequence"})
 
 
 def build_train_dataset(data: DataConfig, *, seed: int) -> IterableDataset:
@@ -65,27 +59,8 @@ def build_train_dataset(data: DataConfig, *, seed: int) -> IterableDataset:
     return InterleavedDataset(datasets, fractions, seed=seed)
 
 
-def build_eval_datasets(data: DataConfig, *, seed: int) -> dict[str, Dataset] | None:
-    """Build a name -> dataset map for sequence-type eval datasets, if any."""
-    if not data.eval or not isinstance(data.eval, dict):
-        return None
-    eval_sets: dict[str, Dataset] = {}
-    for name, spec in data.eval.items():
-        if spec is None:
-            continue
-        eval_type = spec.get("type") if isinstance(spec, dict) else None
-        path = spec.get("path") if isinstance(spec, dict) else spec
-        if eval_type not in _MLM_EVAL_TYPES:
-            logger.warning("Skipping eval dataset %r of unsupported type %r.", name, eval_type)
-            continue
-        eval_sets[str(name)] = ShardedProteinDataset(
-            path, shuffle_shards=False, shuffle_rows=False, seed=seed
-        )
-    return eval_sets or None
-
-
-def build_collator(data: DataConfig, max_length: int, *, deterministic: bool) -> MLMCollator:
-    """Build an `MLMCollator` from the data config."""
+def build_collator(data: DataConfig, max_length: int) -> MLMCollator:
+    """Build the training `MLMCollator` from the data config."""
     return MLMCollator(
         get_tokenizer(),
         max_length=max_length,
@@ -93,7 +68,6 @@ def build_collator(data: DataConfig, max_length: int, *, deterministic: bool) ->
         mask_token_prob=data.mask_token_prob,
         random_token_prob=data.random_token_prob,
         weighted_masking=data.weighted_masking,
-        deterministic=deterministic,
     )
 
 
@@ -113,8 +87,7 @@ def build_trainer(cfg: AblmRunConfig) -> Trainer:
 
     max_length = cfg.model.max_position_embeddings
     train_dataset = build_train_dataset(cfg.data, seed=cfg.train.seed)
-    eval_datasets = build_eval_datasets(cfg.data, seed=cfg.train.seed)
-    train_collator = build_collator(cfg.data, max_length, deterministic=False)
+    train_collator = build_collator(cfg.data, max_length)
 
     # Custom optimizers (Muon) are built here and handed to the stock Trainer;
     # HF-native optimizers are selected purely via training_args.optim.
@@ -128,7 +101,6 @@ def build_trainer(cfg: AblmRunConfig) -> Trainer:
         model=model,
         args=training_args,
         train_dataset=train_dataset,
-        eval_dataset=eval_datasets,
         data_collator=train_collator,
         optimizers=optimizers,
     )

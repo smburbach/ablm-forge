@@ -2,9 +2,6 @@
 
 Parses the ``data.train`` dataset specification declared in :mod:`ablm.config`
 into :class:`~ablm.config.TrainDatasetEntry` objects with normalized fractions.
-Eval datasets are read directly as ``{name: {path, type}}`` dicts by
-``ablm.train.build_eval_datasets`` (HF's Trainer owns eval cadence), so no eval
-parsing lives here.
 """
 
 from __future__ import annotations

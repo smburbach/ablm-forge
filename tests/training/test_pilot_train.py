@@ -1,9 +1,9 @@
 """Pilot end-to-end training test on the stock HuggingFace Trainer.
 
-Trains a tiny model for a few steps + one eval on the real small parquet fixture,
-through the same `build_trainer` path the CLI uses. Asserts the loop completes
-with finite, decreasing loss; a checkpoint is written; eval returns finite
-metrics; and resume restores the global step. Marked slow.
+Trains a tiny model for a few steps on the real small parquet fixture, through
+the same `build_trainer` path the CLI uses. Asserts the loop completes with
+finite loss, a checkpoint is written, and resume restores the global step.
+Marked slow.
 """
 
 from __future__ import annotations
@@ -59,20 +59,6 @@ def test_pilot_train_runs_and_decreases_loss(training_parquet, tmp_path, optimiz
     assert torch.isfinite(torch.tensor(final_loss))
     # A checkpoint directory was written.
     assert list((tmp_path / optimizer).glob("checkpoint-*"))
-
-
-def test_pilot_eval_returns_finite_metrics(training_parquet, tmp_path):
-    cfg = _tiny_run_config(training_parquet, tmp_path / "evalrun")
-    cfg.data.eval = {"heldout": {"path": str(training_parquet), "type": "sequence"}}
-    trainer = build_trainer(cfg)
-    trainer.train()
-
-    metrics = trainer.evaluate()
-    # HF prefixes multi-eval datasets: eval_heldout_loss.
-    loss_keys = [k for k in metrics if k.endswith("loss")]
-    assert loss_keys, f"no loss metric in {metrics}"
-    for k in loss_keys:
-        assert torch.isfinite(torch.tensor(metrics[k]))
 
 
 def test_pilot_resume_restores_global_step(training_parquet, tmp_path):

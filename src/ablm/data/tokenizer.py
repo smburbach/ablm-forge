@@ -108,9 +108,8 @@ def canonical_amino_acid_ids(tok: AblmTokenizerFast | None = None) -> Tensor:
 
     Built by mapping each character of the canonical order through the
     tokenizer's vocab (expected to yield the contiguous block ``range(4, 24)``).
-    This is the shared sampling pool for random-token replacement in the MLM
-    collator and is reused by eval metrics; deriving it from the tokenizer keeps
-    it from drifting from the vocabulary.
+    This is the sampling pool for random-token replacement in the MLM collator;
+    deriving it from the tokenizer keeps it from drifting from the vocabulary.
 
     Args:
         tok: Tokenizer to query; defaults to the shared instance.

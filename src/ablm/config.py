@@ -174,7 +174,6 @@ class DataConfig:
     """Data configuration for training datasets and loading."""
 
     train: Any = None
-    eval: Any = None
 
     # Sequence masking
     mask_prob: float = 0.15
@@ -279,7 +278,6 @@ def build_training_arguments(train: TrainConfig, data: DataConfig) -> TrainingAr
         output_dir=train.output_dir,
         max_steps=train.max_steps,
         per_device_train_batch_size=train.batch_size,
-        per_device_eval_batch_size=train.batch_size,
         gradient_accumulation_steps=train.gradient_accumulation_steps,
         learning_rate=train.lr,
         weight_decay=train.weight_decay,

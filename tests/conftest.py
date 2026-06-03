@@ -63,22 +63,3 @@ def tiny_training_parquet(
     first_batch = next(parquet_file.iter_batches(batch_size=16))
     pq.write_table(pa.Table.from_batches([first_batch]), path)
     return path
-
-
-@pytest.fixture(scope="session")
-def second_eval_parquet(
-    full_training_parquet: Path,
-    tmp_path_factory: pytest.TempPathFactory,
-) -> Path:
-    """A disjoint 64-row slice of the source parquet for the G2 multi-dataset test.
-
-    Drawn from rows ``[256, 320)`` so it does not overlap ``training_parquet``
-    (the first 256 rows), letting the two eval namespaces be compared independently.
-    """
-    path = tmp_path_factory.mktemp("fixtures") / "second_eval.parquet"
-    parquet_file = pq.ParquetFile(full_training_parquet)
-    batches = parquet_file.iter_batches(batch_size=256)
-    next(batches)  # skip the first 256 rows (the training_parquet slice)
-    disjoint = next(batches).slice(0, 64)
-    pq.write_table(pa.Table.from_batches([disjoint]), path)
-    return path
