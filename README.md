@@ -13,8 +13,8 @@ Defaults track **ESM-C** (EvolutionaryScale Cambrian): Pre-LN, full RoPE,
 SwiGLU, bias-free linear layers + layer norms, no QK-norm, no residual scaling,
 no token dropout, and the bit-for-bit ESM-C 33-token tokenizer. Exact-size
 presets: `esmc_300m`, `esmc_600m`, `esmc_6b`. Everything beyond ESM-C
-(`qk_norm`, `residual_scaling`, `norm_strategy`, partial RoPE, Canon convs, and
-ESM-2-style `token_dropout`) is an opt-in experiment knob.
+(`qk_norm`, `residual_scaling`, `norm_strategy`, partial RoPE, and ESM-2-style
+`token_dropout`) is an opt-in experiment knob.
 
 ## Install
 

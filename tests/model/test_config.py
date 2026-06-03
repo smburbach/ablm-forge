@@ -42,9 +42,6 @@ def test_defaults_match_architecture_spec():
     assert cfg.hidden_dropout == 0.0
     assert cfg.tie_word_embeddings is False
     assert cfg.mlm_head_activation == "gelu"
-    assert cfg.canon_enabled is False
-    assert cfg.canon_positions == []
-    assert cfg.canon_activation == "none"
     assert cfg.classifier_pool == "mean"
     assert cfg.classifier_dropout == 0.0
     assert cfg.pre_head_norm is False
@@ -151,78 +148,12 @@ def test_rejects_negative_rope_dim():
         ("residual_scaling", "linear", "residual_scaling must be one of"),
         ("ffn_activation", "relu", "ffn_activation must be one of"),
         ("mlm_head_activation", "swiglu", "mlm_head_activation must be one of"),
-        ("canon_activation", "tanh", "canon_activation must be one of"),
         ("classifier_pool", "max", "classifier_pool must be one of"),
     ],
 )
 def test_rejects_unknown_categorical_values(field, bad_value, expected_match):
     with pytest.raises(ValueError, match=expected_match):
         AblmConfig(**{field: bad_value})
-
-
-def test_canon_enabled_requires_non_empty_positions():
-    with pytest.raises(ValueError, match="canon_positions must be non-empty"):
-        AblmConfig(canon_enabled=True, canon_positions=[])
-
-
-def test_canon_rejects_unknown_position():
-    with pytest.raises(ValueError, match="canon_positions entries must be a subset"):
-        AblmConfig(canon_enabled=True, canon_positions=["A", "Z"], canon_kernel_sizes=3)
-
-
-def test_canon_rejects_duplicate_positions():
-    with pytest.raises(ValueError, match="must not contain duplicates"):
-        AblmConfig(canon_enabled=True, canon_positions=["A", "A"], canon_kernel_sizes=3)
-
-
-def test_canon_resolved_kernel_sizes_cached_back_onto_field():
-    cfg = AblmConfig(
-        num_hidden_layers=4,
-        canon_enabled=True,
-        canon_positions=["A"],
-        canon_kernel_sizes=3,
-    )
-    assert cfg.canon_kernel_sizes == [3, 3, 3, 3]
-
-
-def test_canon_linear_schedule_resolves_per_layer():
-    cfg = AblmConfig(
-        num_hidden_layers=5,
-        canon_enabled=True,
-        canon_positions=["A", "D"],
-        canon_kernel_sizes={"schedule": "linear", "min": 3, "max": 11},
-    )
-    assert cfg.canon_kernel_sizes == [3, 5, 7, 9, 11]
-
-
-def test_canon_constant_schedule_resolves_per_layer():
-    cfg = AblmConfig(
-        num_hidden_layers=3,
-        canon_enabled=True,
-        canon_positions=["C"],
-        canon_kernel_sizes={"schedule": "constant", "value": 5},
-    )
-    assert cfg.canon_kernel_sizes == [5, 5, 5]
-
-
-def test_canon_kernel_size_list_length_mismatch_raises():
-    with pytest.raises(ValueError, match="canon_kernel_sizes list has length"):
-        AblmConfig(
-            num_hidden_layers=4,
-            canon_enabled=True,
-            canon_positions=["A"],
-            canon_kernel_sizes=[3, 3, 3],
-        )
-
-
-def test_canon_disabled_does_not_resolve_kernel_sizes():
-    """When canon is off, the raw value is left untouched (no resolution required)."""
-    cfg = AblmConfig(
-        num_hidden_layers=4,
-        canon_enabled=False,
-        canon_kernel_sizes=4,
-    )
-    assert cfg.canon_kernel_sizes == 4
 
 
 def test_non_default_vocab_emits_warning():
@@ -262,9 +193,6 @@ def test_save_and_from_pretrained_roundtrip_preserves_fields(tmp_path: Path):
         num_attention_heads=8,
         norm_type="rmsnorm",
         norm_strategy="hybrid",
-        canon_enabled=True,
-        canon_positions=["A", "D"],
-        canon_kernel_sizes={"schedule": "linear", "min": 3, "max": 9},
         post_embed_norm=True,
         tie_word_embeddings=True,
     )
@@ -272,8 +200,6 @@ def test_save_and_from_pretrained_roundtrip_preserves_fields(tmp_path: Path):
 
     on_disk = json.loads((tmp_path / "config.json").read_text())
     assert on_disk["model_type"] == "ablm"
-    # The resolved per-layer list is serialised — not the original dict spec.
-    assert on_disk["canon_kernel_sizes"] == [3, 5, 7, 9]
 
     restored = AblmConfig.from_pretrained(tmp_path)
     assert restored.hidden_size == 512
@@ -282,9 +208,6 @@ def test_save_and_from_pretrained_roundtrip_preserves_fields(tmp_path: Path):
     assert restored.head_dim == 64
     assert restored.norm_type == "rmsnorm"
     assert restored.norm_strategy == "hybrid"
-    assert restored.canon_enabled is True
-    assert restored.canon_positions == ["A", "D"]
-    assert restored.canon_kernel_sizes == [3, 5, 7, 9]
     assert restored.post_embed_norm is True
     assert restored.tie_word_embeddings is True
 

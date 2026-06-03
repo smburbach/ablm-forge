@@ -30,7 +30,6 @@ from transformers.modeling_outputs import (
 # references the otherwise-unused names so linters don't flag them.
 from .attention import AblmAttention
 from .configuration_ablm import AblmConfig
-from .conv import CanonConv
 from .embedding import cls_pool, mean_pool
 from .ffn import SwiGLU
 from .masking import prepare_attention_mask
@@ -39,7 +38,7 @@ from .outputs import LogitsConfig, LogitsOutput
 from .rope import RotaryEmbedding
 from .transformer import AblmBlock, AblmStack
 
-_REMOTE_CODE_DEPS = (AblmAttention, CanonConv, SwiGLU, prepare_attention_mask, RotaryEmbedding)
+_REMOTE_CODE_DEPS = (AblmAttention, SwiGLU, prepare_attention_mask, RotaryEmbedding)
 
 if TYPE_CHECKING:
     from transformers.tokenization_utils_base import BatchEncoding, PreTrainedTokenizerBase
@@ -93,10 +92,6 @@ class AblmPreTrainedModel(PreTrainedModel):
         elif isinstance(module, nn.Embedding):
             nn.init.trunc_normal_(module.weight, mean=0.0, std=std, a=-2 * std, b=2 * std)
             # HF convention: do NOT zero the <pad> row.
-        elif isinstance(module, nn.Conv1d):
-            nn.init.trunc_normal_(module.weight, mean=0.0, std=std, a=-2 * std, b=2 * std)
-            if module.bias is not None:
-                nn.init.zeros_(module.bias)
         elif isinstance(module, (AblmLayerNorm, AblmRMSNorm)):
             if getattr(module, "weight", None) is not None:
                 nn.init.ones_(module.weight)

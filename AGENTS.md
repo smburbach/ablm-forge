@@ -39,7 +39,7 @@ under Pre-LN. The ESM-2 behavior is implemented and available via
 `esmc_600m`, `esmc_6b`. The tokenizer is bit-for-bit ESM-C (33-token vocab).
 Tests `tests/model/test_esm_alignment.py` pin this alignment — keep them green
 when touching defaults. The architecture is a superset: `qk_norm`,
-`residual_scaling`, `norm_strategy`, partial RoPE, and Canon convs are opt-in
+`residual_scaling`, `norm_strategy`, partial RoPE, and `token_dropout` are opt-in
 knobs for experiments. (Exact ESM-2 parity would additionally need a plain GELU
 MLP FFN, which is not yet implemented — only SwiGLU is.)
 

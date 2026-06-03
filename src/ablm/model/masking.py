@@ -1,10 +1,10 @@
-"""Pad-mask helpers and conv-input zeroing."""
+"""Pad-mask helpers."""
 
 from __future__ import annotations
 
 import torch
 
-__all__ = ["prepare_attention_mask", "zero_pad_positions"]
+__all__ = ["prepare_attention_mask"]
 
 
 def prepare_attention_mask(
@@ -44,20 +44,3 @@ def prepare_attention_mask(
             f"expected ({batch_size}, {seq_len})."
         )
     return attention_mask
-
-
-def zero_pad_positions(x: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
-    """Zero out pad rows in a `(B, T, D)` tensor without touching real tokens.
-
-    Used by `CanonConv` before the depthwise 1-D convolution so that pad
-    positions cannot leak into real-token channels via the kernel's receptive
-    field.
-
-    Args:
-        x: `(B, T, D)` tensor.
-        attention_mask: `(B, T)` tensor with `1` at real tokens, `0` at pads.
-
-    Returns:
-        `(B, T, D)` tensor with pad rows zeroed.
-    """
-    return x * attention_mask.unsqueeze(-1).to(x.dtype)

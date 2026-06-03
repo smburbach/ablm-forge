@@ -8,7 +8,6 @@ from types import SimpleNamespace
 import pytest
 import torch
 
-from ablm.model.conv import CanonConv
 from ablm.model.norm import AblmLayerNorm
 from ablm.model.transformer import AblmBlock, AblmStack
 
@@ -35,17 +34,9 @@ def _config(
     post_embed_norm: bool = False,
     residual_scaling: str = "sqrt_num_layers",
     gradient_checkpointing: bool = False,
-    canon_enabled: bool = False,
-    canon_positions: list[str] | None = None,
-    canon_kernel_sizes: list[int] | None = None,
-    canon_activation: str = "none",
 ) -> SimpleNamespace:
     head_dim = head_dim if head_dim is not None else hidden_size // num_attention_heads
     rope_dim = rope_dim if rope_dim is not None else head_dim
-    if canon_positions is None:
-        canon_positions = []
-    if canon_kernel_sizes is None:
-        canon_kernel_sizes = [3] * num_hidden_layers
     return SimpleNamespace(
         hidden_size=hidden_size,
         num_attention_heads=num_attention_heads,
@@ -67,10 +58,6 @@ def _config(
         post_embed_norm=post_embed_norm,
         residual_scaling=residual_scaling,
         gradient_checkpointing=gradient_checkpointing,
-        canon_enabled=canon_enabled,
-        canon_positions=canon_positions,
-        canon_kernel_sizes=canon_kernel_sizes,
-        canon_activation=canon_activation,
     )
 
 
@@ -164,62 +151,6 @@ def test_block_hybrid_strategy_has_no_block_level_post_norms():
 
 
 # ---------------------------------------------------------------------------
-# AblmBlock — Canon wiring
-# ---------------------------------------------------------------------------
-
-
-def test_block_no_canon_when_disabled():
-    cfg = _config(canon_enabled=False, canon_positions=["A", "B", "C", "D"])
-    block = AblmBlock(cfg, layer_idx=0)
-    for name in ("conv_a", "conv_b", "conv_c", "conv_d"):
-        assert not hasattr(block, name)
-
-
-@pytest.mark.parametrize("position", ["A", "B", "C", "D"])
-def test_block_creates_only_requested_canon_position(position: str):
-    cfg = _config(
-        canon_enabled=True,
-        canon_positions=[position],
-        canon_kernel_sizes=[3, 3],
-    )
-    block = AblmBlock(cfg, layer_idx=0)
-    name = f"conv_{position.lower()}"
-    assert isinstance(getattr(block, name), CanonConv)
-    for other in {"A", "B", "C", "D"} - {position}:
-        assert not hasattr(block, f"conv_{other.lower()}")
-
-
-def test_block_canon_kernel_size_comes_from_layer_idx():
-    cfg = _config(
-        num_hidden_layers=3,
-        canon_enabled=True,
-        canon_positions=["A"],
-        canon_kernel_sizes=[2, 5, 7],
-    )
-    block_1 = AblmBlock(cfg, layer_idx=1)
-    block_2 = AblmBlock(cfg, layer_idx=2)
-    assert block_1.conv_a.kernel_size == 5
-    assert block_2.conv_a.kernel_size == 7
-
-
-def test_block_canon_rejects_bad_position():
-    cfg = _config(canon_enabled=True, canon_positions=["Z"])
-    with pytest.raises(ValueError, match="canon_positions"):
-        AblmBlock(cfg, layer_idx=0)
-
-
-def test_block_canon_rejects_unresolved_kernel_sizes():
-    cfg = _config(
-        num_hidden_layers=2,
-        canon_enabled=True,
-        canon_positions=["A"],
-        canon_kernel_sizes=[3],  # length mismatch
-    )
-    with pytest.raises(ValueError, match="canon_kernel_sizes"):
-        AblmBlock(cfg, layer_idx=0)
-
-
-# ---------------------------------------------------------------------------
 # AblmBlock — forward
 # ---------------------------------------------------------------------------
 
@@ -244,19 +175,6 @@ def test_block_forward_returns_attentions_when_requested():
     _, attn = block(x, _ones_mask(2, 4), output_attentions=True)
     assert attn is not None
     assert attn.shape == (2, cfg.num_attention_heads, 4, 4)
-
-
-def test_block_forward_with_all_canon_positions_runs():
-    torch.manual_seed(2)
-    cfg = _config(
-        canon_enabled=True,
-        canon_positions=["A", "B", "C", "D"],
-        canon_kernel_sizes=[3, 3],
-    )
-    block = AblmBlock(cfg, layer_idx=0)
-    x = torch.randn(2, 6, cfg.hidden_size)
-    out, _ = block(x, _ones_mask(2, 6))
-    assert out.shape == x.shape
 
 
 def test_block_forward_grad_flows_to_input():
@@ -421,20 +339,6 @@ def test_stack_runs_under_every_norm_strategy(strategy: str):
     input_ids = torch.randint(0, cfg.vocab_size, (2, 5))
     last_hidden, _, _ = stack(input_ids)
     assert last_hidden.shape == (2, 5, cfg.hidden_size)
-
-
-def test_stack_runs_with_canon_enabled():
-    torch.manual_seed(0)
-    cfg = _config(
-        num_hidden_layers=2,
-        canon_enabled=True,
-        canon_positions=["A", "D"],
-        canon_kernel_sizes=[3, 3],
-    )
-    stack = AblmStack(cfg)
-    input_ids = torch.randint(0, cfg.vocab_size, (2, 6))
-    last_hidden, _, _ = stack(input_ids)
-    assert last_hidden.shape == (2, 6, cfg.hidden_size)
 
 
 # ---------------------------------------------------------------------------

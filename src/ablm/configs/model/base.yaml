@@ -6,8 +6,8 @@
 #
 # These defaults track the ESM-C architecture: Pre-LN, full RoPE, SwiGLU,
 # bias-free layers (norm_bias=false, ffn_bias=false), no QK-norm, no residual
-# scaling, and ESM-style masked-token dropout. Toggle the knobs below to explore
-# variants (qk_norm, residual_scaling, norm_strategy, canon, ...).
+# scaling. Toggle the knobs below to explore variants (qk_norm,
+# residual_scaling, norm_strategy, token_dropout, ...).
 model:
   # Core dimensions (~400M parameters)
   vocab_size: 33
@@ -45,12 +45,6 @@ model:
   # under Pre-LN and it perturbs inference), so the ESM-C-exact default is off;
   # set true to opt back into the ESM-2 behavior.
   token_dropout: false
-
-  # Canon depthwise convolution (off by default)
-  canon_enabled: false
-  canon_positions: [] # subset of {A, B, C, D}
-  canon_kernel_sizes: 4
-  canon_activation: none # none | silu | gelu
 
   # Init / checkpointing
   initializer_range: 0.02

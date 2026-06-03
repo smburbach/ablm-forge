@@ -23,7 +23,6 @@ _B, _T = 2, 16
 
 _NORM_TYPES = ("layernorm", "rmsnorm")
 _NORM_STRATEGIES = ("pre", "sandwich", "hybrid", "post_sdpa")
-_CANON = (False, True)
 _ROPE_DIMS = (_HEAD_DIM, _HEAD_DIM // 2)  # full RoPE + partial RoPE
 _QK_NORM = (True, False)
 _RESIDUAL_SCALING = ("sqrt_num_layers", "none")
@@ -34,7 +33,6 @@ _COMBOS = list(
     itertools.product(
         _NORM_TYPES,
         _NORM_STRATEGIES,
-        _CANON,
         _ROPE_DIMS,
         _QK_NORM,
         _RESIDUAL_SCALING,
@@ -45,16 +43,16 @@ _COMBOS = list(
 
 
 def _combo_id(combo) -> str:
-    norm_type, strat, canon, rope_dim, qk, resid, tie, post = combo
+    norm_type, strat, rope_dim, qk, resid, tie, post = combo
     return (
-        f"{norm_type}-{strat}-canon{int(canon)}-rope{rope_dim}-"
+        f"{norm_type}-{strat}-rope{rope_dim}-"
         f"qk{int(qk)}-{resid}-tie{int(tie)}-pe{int(post)}"
     )
 
 
 @pytest.mark.parametrize("combo", _COMBOS, ids=[_combo_id(c) for c in _COMBOS])
 def test_toggle_combination_trains_one_step(combo) -> None:
-    norm_type, norm_strategy, canon, rope_dim, qk_norm, residual_scaling, tie, post_embed = combo
+    norm_type, norm_strategy, rope_dim, qk_norm, residual_scaling, tie, post_embed = combo
     torch.manual_seed(0)
 
     config = AblmConfig(
@@ -64,8 +62,6 @@ def test_toggle_combination_trains_one_step(combo) -> None:
         max_position_embeddings=64,
         norm_type=norm_type,
         norm_strategy=norm_strategy,
-        canon_enabled=canon,
-        canon_positions=["A", "C", "D"] if canon else None,
         rope_dim=rope_dim,
         nope_dim=_HEAD_DIM - rope_dim,
         qk_norm=qk_norm,

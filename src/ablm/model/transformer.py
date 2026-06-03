@@ -10,7 +10,6 @@ from torch import nn
 from torch.utils import checkpoint as torch_checkpoint
 
 from .attention import AblmAttention
-from .conv import CanonConv
 from .embedding import AblmEmbedding
 from .ffn import make_ffn
 from .masking import prepare_attention_mask
@@ -22,16 +21,12 @@ if TYPE_CHECKING:
 __all__ = ["AblmBlock", "AblmStack"]
 
 
-_CANON_POSITIONS = ("A", "B", "C", "D")
-
-
 class AblmBlock(nn.Module):
     """One repeating encoder block: attention + FFN sublayers, configurable norms.
 
     Wires the four `norm_strategy` variants (`pre`, `sandwich`, `hybrid`,
-    `post_sdpa`), optional Canon depthwise convolutions at positions A/B/C/D,
-    the residual-stream scaling factor `alpha`, and an opt-in gradient
-    checkpoint dispatch.
+    `post_sdpa`), the residual-stream scaling factor `alpha`, and an opt-in
+    gradient checkpoint dispatch.
     """
 
     def __init__(self, config: AblmConfig, layer_idx: int) -> None:
@@ -102,51 +97,17 @@ class AblmBlock(nn.Module):
                 config.norm_type, config.hidden_size, eps=config.norm_eps, bias=norm_bias
             )
 
-        # Canon convs at A/B/C/D: only when canon is enabled and the position is selected.
-        if getattr(config, "canon_enabled", False):
-            positions = set(config.canon_positions)
-            unknown = positions - set(_CANON_POSITIONS)
-            if unknown:
-                raise ValueError(
-                    f"canon_positions contains unknown entries {sorted(unknown)}; "
-                    f"expected subset of {list(_CANON_POSITIONS)}."
-                )
-            kernel_sizes = config.canon_kernel_sizes
-            if not isinstance(kernel_sizes, list) or len(kernel_sizes) != config.num_hidden_layers:
-                raise ValueError(
-                    "config.canon_kernel_sizes must be a list of length num_hidden_layers; "
-                    "resolve it via resolve_canon_kernel_sizes() before instantiating AblmBlock."
-                )
-            kernel_size = kernel_sizes[layer_idx]
-            activation = getattr(config, "canon_activation", "none")
-            if "A" in positions:
-                self.conv_a = CanonConv(config.hidden_size, kernel_size, activation=activation)
-            if "B" in positions:
-                self.conv_b = CanonConv(config.hidden_size, kernel_size, activation=activation)
-            if "C" in positions:
-                self.conv_c = CanonConv(config.hidden_size, kernel_size, activation=activation)
-            if "D" in positions:
-                self.conv_d = CanonConv(config.hidden_size, kernel_size, activation=activation)
-
     def _forward_impl(
         self,
         x: torch.Tensor,
         attention_mask: torch.Tensor,
         output_attentions: bool,
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
-        # Canon A: additive into the residual stream (preserves the residual identity).
-        if hasattr(self, "conv_a"):
-            x = x + self.conv_a(x, attention_mask)
-
         # Attention sublayer. Hybrid feeds raw `x` (QKV-norm lives inside the
         # attention module); every other strategy applies the outer pre-norm.
         a_in = x if self.norm_strategy == "hybrid" else self.attn_norm(x)
-        if hasattr(self, "conv_b"):
-            a_in = self.conv_b(a_in, attention_mask)
 
         attn_out, attn_weights = self.attention(a_in, attention_mask, output_attentions)
-        if hasattr(self, "conv_c"):
-            attn_out = self.conv_c(attn_out, attention_mask)
 
         if self.norm_strategy in {"sandwich", "post_sdpa"}:
             attn_out = self.attn_post_norm(attn_out)
@@ -154,10 +115,7 @@ class AblmBlock(nn.Module):
 
         # FFN sublayer.
         h_norm = self.ffn_norm(h)
-        f_in = h_norm
-        if hasattr(self, "conv_d"):
-            f_in = self.conv_d(f_in, attention_mask)
-        ffn_out = self.ffn(f_in)
+        ffn_out = self.ffn(h_norm)
 
         if self.norm_strategy == "sandwich":
             ffn_out = self.ffn_post_norm(ffn_out)

@@ -7,17 +7,7 @@ from typing import Any
 
 from transformers import PretrainedConfig
 
-from .conv import resolve_canon_kernel_sizes
 from .ffn import round_up_to
-
-# When loading custom code from a local directory with trust_remote_code=True,
-# HuggingFace copies only a module's *direct* relative imports (depth-1; see
-# transformers.dynamic_module_utils.get_cached_module_file). `conv` imports
-# `masking` transitively, so import it directly here to guarantee it is bundled
-# alongside this file. Referenced in `_REMOTE_CODE_DEPS` to mark it used.
-from .masking import prepare_attention_mask
-
-_REMOTE_CODE_DEPS = (prepare_attention_mask,)
 
 __all__ = ["AblmConfig"]
 
@@ -27,9 +17,7 @@ _VALID_NORM_STRATEGIES = ("pre", "sandwich", "hybrid", "post_sdpa")
 _VALID_RESIDUAL_SCALINGS = ("sqrt_num_layers", "none")
 _VALID_FFN_ACTIVATIONS = ("swiglu",)
 _VALID_MLM_HEAD_ACTIVATIONS = ("gelu", "silu", "relu")
-_VALID_CANON_ACTIVATIONS = ("none", "silu", "gelu")
 _VALID_CLASSIFIER_POOLS = ("mean", "cls")
-_VALID_CANON_POSITIONS = frozenset({"A", "B", "C", "D"})
 
 _DEFAULT_VOCAB_SIZE = 33
 
@@ -72,10 +60,6 @@ class AblmConfig(PretrainedConfig):
         hidden_dropout: float = 0.0,
         tie_word_embeddings: bool = False,
         mlm_head_activation: str = "gelu",
-        canon_enabled: bool = False,
-        canon_positions: list[str] | None = None,
-        canon_kernel_sizes: int | list[int] | dict[str, Any] = 4,
-        canon_activation: str = "none",
         initializer_range: float = 0.02,
         classifier_pool: str = "mean",
         classifier_dropout: float = 0.0,
@@ -115,10 +99,6 @@ class AblmConfig(PretrainedConfig):
         self.attention_dropout = float(attention_dropout)
         self.hidden_dropout = float(hidden_dropout)
         self.mlm_head_activation = mlm_head_activation
-        self.canon_enabled = bool(canon_enabled)
-        self.canon_positions = list(canon_positions) if canon_positions is not None else []
-        self.canon_kernel_sizes = canon_kernel_sizes
-        self.canon_activation = canon_activation
         self.initializer_range = float(initializer_range)
         self.classifier_pool = classifier_pool
         self.classifier_dropout = float(classifier_dropout)
@@ -224,34 +204,10 @@ class AblmConfig(PretrainedConfig):
                 f"mlm_head_activation must be one of {_VALID_MLM_HEAD_ACTIVATIONS}; "
                 f"got {self.mlm_head_activation!r}."
             )
-        if self.canon_activation not in _VALID_CANON_ACTIVATIONS:
-            raise ValueError(
-                f"canon_activation must be one of {_VALID_CANON_ACTIVATIONS}; "
-                f"got {self.canon_activation!r}."
-            )
         if self.classifier_pool not in _VALID_CLASSIFIER_POOLS:
             raise ValueError(
                 f"classifier_pool must be one of {_VALID_CLASSIFIER_POOLS}; "
                 f"got {self.classifier_pool!r}."
-            )
-
-        if self.canon_enabled:
-            if not self.canon_positions:
-                raise ValueError("canon_positions must be non-empty when canon_enabled=True.")
-            bad_positions = [p for p in self.canon_positions if p not in _VALID_CANON_POSITIONS]
-            if bad_positions:
-                raise ValueError(
-                    f"canon_positions entries must be a subset of "
-                    f"{sorted(_VALID_CANON_POSITIONS)}; got invalid entries {bad_positions}."
-                )
-            if len(set(self.canon_positions)) != len(self.canon_positions):
-                raise ValueError(
-                    f"canon_positions must not contain duplicates; got {self.canon_positions}."
-                )
-            # Cache the resolved per-layer list back onto the field so downstream
-            # code (AblmBlock) can index it directly without re-resolving.
-            self.canon_kernel_sizes = resolve_canon_kernel_sizes(
-                self.canon_kernel_sizes, self.num_hidden_layers
             )
 
         if self.vocab_size != _DEFAULT_VOCAB_SIZE:
