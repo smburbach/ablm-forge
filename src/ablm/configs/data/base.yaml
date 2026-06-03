@@ -8,22 +8,21 @@ data:
   #     train:
   #       uniref50: { path: /data/uniref50/, fraction: 0.6 }
   #       bfd:      { path: /data/bfd/,      fraction: 0.4 }
-  # Notes: each path is a .parquet file or a directory of shards; fractions are
-  # normalized to 1.0; omitted fractions share the remaining mass equally;
-  # parquet must have columns sequence_id, sequence.
+  # Notes: each path is a .parquet file or a directory of shards loaded via 🤗
+  # datasets streaming; fractions are normalized to 1.0; omitted fractions share
+  # the remaining mass equally; parquet must have columns sequence_id, sequence.
+  # For num_workers > 1, shard the data into multiple parquet files.
   train: null
 
-  # Sequence masking
+  # Masked-LM corruption (transformers.DataCollatorForLanguageModeling)
   mask_prob: 0.15
   mask_token_prob: 0.8
   random_token_prob: 0.1
-  weighted_masking: false     # set true to honor the masking_weights column
+
+  # Streaming shuffle buffer (datasets.IterableDataset.shuffle)
+  shuffle_buffer_size: 10_000
 
   # DataLoader settings
   num_workers: 4
   pin_memory: true
   prefetch_factor: 4
-
-  # Shard iteration behavior (only affects sharded parquet directories)
-  shuffle_shards: true
-  shuffle_rows: true

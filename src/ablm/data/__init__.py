@@ -1,21 +1,19 @@
 """ABLM data tooling.
 
-Tokenization access, collation, and the dataset builders for MLM pretraining.
-The public surface re-exported below feeds the HuggingFace Trainer.
+Streaming MLM data built on 🤗 `datasets` + `transformers`: `build_train_dataset`
+streams/tokenizes/mixes parquet sources, `build_collator` is the stock
+masked-LM collator. The public surface re-exported below feeds the HF Trainer.
 """
 
 from __future__ import annotations
 
 from ablm.data.config import parse_train_configs
-from ablm.data.sequence.collate import MLMCollator, tokenize_and_pad
-from ablm.data.sequence.dataset import InterleavedDataset, ShardedProteinDataset
+from ablm.data.loaders import build_collator, build_train_dataset
 from ablm.data.tokenizer import get_tokenizer
 
 __all__ = [
-    "InterleavedDataset",
-    "MLMCollator",
-    "ShardedProteinDataset",
+    "build_collator",
+    "build_train_dataset",
     "get_tokenizer",
     "parse_train_configs",
-    "tokenize_and_pad",
 ]

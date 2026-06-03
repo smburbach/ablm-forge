@@ -175,20 +175,20 @@ class DataConfig:
 
     train: Any = None
 
-    # Sequence masking
+    # Masked-LM corruption (DataCollatorForLanguageModeling): mask_prob of tokens
+    # are selected; of those, mask_token_prob -> <mask>, random_token_prob -> a
+    # random token, the rest are kept (BERT 80/10/10 by default).
     mask_prob: float = 0.15
     mask_token_prob: float = 0.8
     random_token_prob: float = 0.1
-    weighted_masking: bool = False
+
+    # Streaming shuffle buffer (datasets.IterableDataset.shuffle).
+    shuffle_buffer_size: int = 10_000
 
     # DataLoader settings
     num_workers: int = 4
     pin_memory: bool = True
     prefetch_factor: int = 4
-
-    # Shard iteration behavior
-    shuffle_shards: bool = True
-    shuffle_rows: bool = True
 
     def __post_init__(self) -> None:
         """Validate the masking-split probabilities."""
@@ -302,6 +302,9 @@ def build_training_arguments(train: TrainConfig, data: DataConfig) -> TrainingAr
         dataloader_num_workers=data.num_workers,
         dataloader_pin_memory=data.pin_memory,
         dataloader_prefetch_factor=data.prefetch_factor if data.num_workers > 0 else None,
+        # Each rank streams its own shard (build_train_dataset splits by node), so
+        # don't let accelerate re-dispatch batches from the main process.
+        accelerator_config={"dispatch_batches": False},
         report_to=(["wandb"] if train.wandb_enabled else ["none"]),
         run_name=train.wandb_run_name,
         remove_unused_columns=False,

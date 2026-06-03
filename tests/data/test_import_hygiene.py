@@ -15,9 +15,7 @@ _SUBMODULES = [
     "ablm.data",
     "ablm.data.tokenizer",
     "ablm.data.config",
-    "ablm.data.sequence",
-    "ablm.data.sequence.dataset",
-    "ablm.data.sequence.collate",
+    "ablm.data.loaders",
 ]
 
 

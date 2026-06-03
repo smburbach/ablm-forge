@@ -132,7 +132,7 @@ def test_dataconfig_defaults_are_valid() -> None:
     assert cfg.mask_prob == pytest.approx(0.15)
     assert cfg.mask_token_prob == pytest.approx(0.8)
     assert cfg.random_token_prob == pytest.approx(0.1)
-    assert cfg.weighted_masking is False
+    assert cfg.shuffle_buffer_size == 10_000
 
 
 def test_dataconfig_split_sum_one_is_valid() -> None:

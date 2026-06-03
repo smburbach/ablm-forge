@@ -59,5 +59,6 @@ ablm info
 - `src/ablm/model/attention.py` — SDPA attention (+ a manual-softmax fallback
   for `output_attentions`).
 - `src/ablm/training/` — optimizer registry (no `Trainer` subclass).
-- `src/ablm/data/` — tokenizer + MLM dataset/collator.
+- `src/ablm/data/` — tokenizer + 🤗 `datasets` streaming loader
+  (`build_train_dataset`) + HF `DataCollatorForLanguageModeling` (`build_collator`).
 - `src/ablm/train.py` — `torchrun -m ablm.train --config <yaml>` entry point.

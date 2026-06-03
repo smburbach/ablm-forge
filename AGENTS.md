@@ -74,7 +74,7 @@ MLP FFN, which is not yet implemented — only SwiGLU is.)
 ```
 src/ablm/
 ├── model/
-│   ├── outputs.py norm.py masking.py rope.py embedding.py ffn.py conv.py
+│   ├── outputs.py norm.py masking.py rope.py embedding.py ffn.py
 │   ├── attention.py            # AblmAttention: SDPA + manual-softmax fallback
 │   ├── transformer.py          # AblmBlock + AblmStack (FSDP wrap unit: AblmBlock)
 │   ├── configuration_ablm.py   # AblmConfig
@@ -82,7 +82,7 @@ src/ablm/
 │   └── modeling_ablm.py        # all public Ablm* model classes
 ├── training/
 │   └── optim.py                # OPTIMIZERS registry + Muon CombinedOptimizer
-├── data/                       # tokenizer + MLM dataset/collator
+├── data/                       # tokenizer + 🤗 datasets streaming loader + HF MLM collator
 ├── config.py                   # OmegaConf -> AblmConfig + TrainingArguments + ...
 ├── train.py                    # torchrun entry: build + transformers.Trainer
 └── cli.py                      # `ablm train ...`, `ablm info`
