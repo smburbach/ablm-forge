@@ -1,9 +1,11 @@
 # Agent Instructions for ablm-forge
 
 Lab base model-architecture repo for antibody/protein language-model
-experiments. An ESM-style bidirectional encoder wired to
-the stock HuggingFace `Trainer`, launched via `torchrun` + FSDP2, with
-SDPA-based attention and a pluggable optimizer registry.
+experiments. An ESM-style bidirectional encoder wired to the stock HuggingFace
+`Trainer`, launched via `torchrun` + FSDP2, with SDPA-based attention and an
+optional Muon optimizer. It is a **library, not a framework**: no config system,
+no CLI — you compose the pieces in a training script (`scripts/pretrain.py` is
+the example).
 
 This file is the single source of truth for agent and contributor instructions.
 Make all future updates here, not in `CLAUDE.md` (which points back to this file).
@@ -35,10 +37,11 @@ RoPE, SwiGLU, **bias-free** linear layers and layer norms (`norm_bias=false`,
 `ffn_bias=false`), **no QK-norm**, **no residual scaling**, and **no token
 dropout** (`token_dropout=false` — ESM-2 had it; ESM-C removed it as redundant
 under Pre-LN. The ESM-2 behavior is implemented and available via
-`token_dropout=true`). Exact-size presets: `esmc_300m`,
-`esmc_600m`, `esmc_6b`. The tokenizer is bit-for-bit ESM-C (33-token vocab).
-Tests `tests/model/test_esm_alignment.py` pin this alignment — keep them green
-when touching defaults. The architecture is a superset: `qk_norm`,
+`token_dropout=true`). ESM-C sizes are head_dim-64 at 30L/960, 36L/1152,
+80L/2560 (300M / 600M / 6B) — set them directly on `AblmConfig`. The tokenizer is
+bit-for-bit ESM-C (33-token vocab). Tests `tests/model/test_esm_alignment.py` pin
+this alignment — keep them green when touching defaults. The architecture is a
+superset: `qk_norm`,
 `residual_scaling`, `norm_strategy`, partial RoPE, and `token_dropout` are opt-in
 knobs for experiments. (Exact ESM-2 parity would additionally need a plain GELU
 MLP FFN, which is not yet implemented — only SwiGLU is.)
@@ -50,11 +53,14 @@ MLP FFN, which is not yet implemented — only SwiGLU is.)
 
 ## Core design rules (do not violate)
 
+- **No config system, no CLI.** Configuration lives in Python: `AblmConfig`
+  (a `PretrainedConfig`) for the model, `transformers.TrainingArguments` for
+  training, composed in a script (`scripts/pretrain.py`). Don't add OmegaConf /
+  YAML config trees / a `train` CLI / presets.
 - **No `Trainer` subclass, no custom trainer loop.** Use stock
-  `transformers.Trainer` directly. Optimizer choice flows through HF's native
-  hooks: `TrainingArguments.optim`, `lr_scheduler_type`, and the
-  `optimizers=` / `optimizer_cls_and_kwargs` constructor args. New optimizers go
-  in the `OPTIMIZERS` dict (`ablm/training/optim.py`), never the Trainer.
+  `transformers.Trainer` directly. HF-native optimizers via
+  `TrainingArguments.optim`; Muon via `build_muon_optimizer` + the `optimizers=`
+  tuple. Schedules via `lr_scheduler_type`.
 - **Attention is SDPA + a manual fallback** in `ablm/model/attention.py`. Don't
   reintroduce a kernel registry / explicit flash-attn integration: SDPA already
   auto-selects the fused backend. (Keep attention in one file, not a subpackage —
@@ -81,21 +87,22 @@ src/ablm/
 │   ├── tokenization_ablm.py    # AblmTokenizerFast (33-token ESM-C vocab)
 │   └── modeling_ablm.py        # all public Ablm* model classes
 ├── training/
-│   └── optim.py                # OPTIMIZERS registry + Muon CombinedOptimizer
-├── data/                       # tokenizer + 🤗 datasets streaming loader + HF MLM collator
-├── config.py                   # OmegaConf -> AblmConfig + TrainingArguments + ...
-├── train.py                    # torchrun entry: build + transformers.Trainer
-└── cli.py                      # `ablm train ...`, `ablm info`
+│   └── optim.py                # Muon CombinedOptimizer + build_muon_optimizer
+└── data/                       # tokenizer + 🤗 datasets streaming loader + HF MLM collator
+scripts/pretrain.py             # example training entry point (not part of the package)
 tests/                          # pytest, mirrors src/
 ```
 
 ## Launching training
 
+There's no entry point in the package — copy/edit `scripts/pretrain.py`:
+
 ```bash
 # single GPU
-ablm train --config run.yaml
-# multi-GPU + FSDP2 (set train.fsdp: "full_shard auto_wrap" in the YAML)
-torchrun --standalone --nproc_per_node=8 -m ablm.train --config run.yaml
+python scripts/pretrain.py --data train.parquet --output-dir out
+# multi-GPU + FSDP2
+torchrun --standalone --nproc_per_node=8 scripts/pretrain.py \
+    --data train/ --output-dir out --fsdp --bf16 --gradient-checkpointing
 ```
 
 ## Code Style
@@ -110,12 +117,14 @@ torchrun --standalone --nproc_per_node=8 -m ablm.train --config run.yaml
   for input variation, `@pytest.mark.slow` for multi-step / GPU runs.
 - Prefer real data (the parquet fixture under `tests/fixtures/training/`).
 - The pilot suite (`tests/training/test_pilot_train.py`,
-  `test_pilot_fsdp.py`) trains a tiny model end-to-end through the real
-  `build_trainer` path — keep these green; they prove the HF-Trainer + FSDP2 wiring.
+  `test_pilot_fsdp.py`) trains a tiny model end-to-end by composing the Trainer
+  directly (the `scripts/pretrain.py` flow); `test_pilot_fsdp.py` runs the script
+  under torchrun. Keep these green — they prove the HF-Trainer + FSDP2 wiring.
 
 ## What Not To Do
 
 - Don't add `# type: ignore` / `# ty: ignore` without a specific rule code.
 - Don't use `os.path` — use `pathlib.Path`.
 - Don't put logic in `__init__.py`.
-- Don't reintroduce a custom trainer, an attention subpackage, or MoE.
+- Don't reintroduce a custom trainer, a config/CLI system, an attention
+  subpackage, or MoE.

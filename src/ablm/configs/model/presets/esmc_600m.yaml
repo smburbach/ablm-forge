@@ -1,7 +1,0 @@
-# ESM-C 600M (EvolutionaryScale Cambrian) exact dimensions.
-# Architecture comes from configs/model/base.yaml; this preset only pins size.
-model:
-  hidden_size: 1152
-  num_hidden_layers: 36
-  num_attention_heads: 18
-  max_position_embeddings: 2048

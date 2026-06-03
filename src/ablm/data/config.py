@@ -1,14 +1,26 @@
-"""Data-config parsing helpers.
+"""Training-dataset spec parsing.
 
-Parses the ``data.train`` dataset specification declared in :mod:`ablm.config`
-into :class:`~ablm.config.TrainDatasetEntry` objects with normalized fractions.
+Parses a ``train`` dataset specification (a single parquet path, or a
+``{name: {path, fraction}}`` mapping) into :class:`TrainDatasetEntry` objects
+with normalized sampling fractions, consumed by
+:func:`ablm.data.loaders.build_train_dataset`.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
-from ablm.config import TrainDatasetEntry
+__all__ = ["TrainDatasetEntry", "parse_train_configs"]
+
+
+@dataclass
+class TrainDatasetEntry:
+    """A single parsed training source: a parquet path and its sampling fraction."""
+
+    name: str
+    path: str
+    fraction: float
 
 
 def parse_train_configs(raw: Any) -> list[TrainDatasetEntry]:
@@ -29,7 +41,7 @@ def parse_train_configs(raw: Any) -> list[TrainDatasetEntry]:
         raw: The ``data.train`` value from config — a string, mapping, or ``None``.
 
     Returns:
-        List of :class:`~ablm.config.TrainDatasetEntry` with normalized fractions.
+        List of :class:`TrainDatasetEntry` with normalized fractions.
 
     Raises:
         ValueError: If a specified fraction is negative, the resolved fractions do

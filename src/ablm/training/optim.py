@@ -1,10 +1,9 @@
-"""Optimizers.
+"""Muon optimizer (2D hidden weights) + AdamW (everything else).
 
-A small registry maps a config name to either an HF-native
-`TrainingArguments.optim` string or a custom builder — no `Trainer` subclass.
-HF-native optimizers are selected via `optim`; custom ones (Muon) are built here
-and handed to the stock Trainer through its `optimizers=` tuple. Add an optimizer
-by adding an entry to `OPTIMIZERS`.
+HF-native optimizers are selected directly via `TrainingArguments.optim`. The one
+optimizer HF doesn't ship — Muon — is built here as a `CombinedOptimizer`
+(`torch.optim.Muon` + `AdamW`) and handed to the stock Trainer via its
+`optimizers=` tuple. No `Trainer` subclass.
 """
 
 from __future__ import annotations
@@ -21,14 +20,9 @@ if TYPE_CHECKING:
     from torch import nn
 
 __all__ = [
-    "OPTIMIZERS",
     "CombinedOptimizer",
     "OptimizerSettings",
-    "OptimizerSpec",
-    "available_optimizers",
     "build_muon_optimizer",
-    "build_optimizer",
-    "resolve_optimizer",
 ]
 
 
@@ -163,60 +157,3 @@ def build_muon_optimizer(model: nn.Module, settings: OptimizerSettings) -> Combi
             ),
         ]
     )
-
-
-# ----------------------------------------------------------------------
-# Registry
-# ----------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class OptimizerSpec:
-    """How to realize an optimizer: an HF `optim` string or a custom builder."""
-
-    hf_optim: str | None = None
-    builder: Callable[[nn.Module, OptimizerSettings], torch.optim.Optimizer] | None = None
-
-    @property
-    def is_custom(self) -> bool:
-        return self.builder is not None
-
-
-# Add an optimizer here: either an HF `TrainingArguments.optim` string, or a
-# `builder(model, settings) -> Optimizer` for one HF doesn't ship.
-OPTIMIZERS: dict[str, OptimizerSpec] = {
-    "adamw": OptimizerSpec(hf_optim="adamw_torch"),
-    "adamw_fused": OptimizerSpec(hf_optim="adamw_torch_fused"),
-    "adafactor": OptimizerSpec(hf_optim="adafactor"),
-    "muon": OptimizerSpec(builder=build_muon_optimizer),
-}
-
-
-def available_optimizers() -> list[str]:
-    return sorted(OPTIMIZERS)
-
-
-def resolve_optimizer(name: str) -> OptimizerSpec:
-    """Return the spec for `name`, or raise listing the registered optimizers."""
-    try:
-        return OPTIMIZERS[name]
-    except KeyError:
-        valid = ", ".join(sorted(OPTIMIZERS))
-        raise ValueError(f"Unknown optimizer {name!r}. Registered: {valid}.") from None
-
-
-def build_optimizer(
-    name: str, model: nn.Module, settings: OptimizerSettings
-) -> torch.optim.Optimizer:
-    """Build a *custom* optimizer instance.
-
-    HF-native optimizers are built by the Trainer (via `TrainingArguments.optim`),
-    so calling this for one is a programming error.
-    """
-    spec = resolve_optimizer(name)
-    if spec.builder is None:
-        raise ValueError(
-            f"Optimizer {name!r} is HF-native (optim={spec.hf_optim!r}); set it on "
-            f"TrainingArguments.optim instead of building it directly."
-        )
-    return spec.builder(model, settings)

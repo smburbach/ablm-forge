@@ -7,11 +7,12 @@ masked-LM collator. The public surface re-exported below feeds the HF Trainer.
 
 from __future__ import annotations
 
-from ablm.data.config import parse_train_configs
+from ablm.data.config import TrainDatasetEntry, parse_train_configs
 from ablm.data.loaders import build_collator, build_train_dataset
 from ablm.data.tokenizer import get_tokenizer
 
 __all__ = [
+    "TrainDatasetEntry",
     "build_collator",
     "build_train_dataset",
     "get_tokenizer",

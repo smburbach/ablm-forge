@@ -1,4 +1,4 @@
-"""Tests for the optimizer registry and the Muon CombinedOptimizer facade."""
+"""Tests for the Muon builder and the CombinedOptimizer facade."""
 
 from __future__ import annotations
 
@@ -6,14 +6,7 @@ import pytest
 import torch
 
 from ablm import AblmConfig, AblmForMaskedLM
-from ablm.training.optim import (
-    CombinedOptimizer,
-    OptimizerSettings,
-    available_optimizers,
-    build_muon_optimizer,
-    build_optimizer,
-    resolve_optimizer,
-)
+from ablm.training.optim import CombinedOptimizer, OptimizerSettings, build_muon_optimizer
 
 
 @pytest.fixture
@@ -29,43 +22,12 @@ def tiny_model() -> AblmForMaskedLM:
 
 
 # ----------------------------------------------------------------------
-# Registry
-# ----------------------------------------------------------------------
-
-
-def test_builtin_optimizers_registered():
-    assert {"adamw", "adamw_fused", "adafactor", "muon"}.issubset(set(available_optimizers()))
-
-
-def test_hf_native_resolves_to_optim_string():
-    spec = resolve_optimizer("adamw_fused")
-    assert spec.hf_optim == "adamw_torch_fused"
-    assert not spec.is_custom
-
-
-def test_muon_resolves_to_custom_builder():
-    spec = resolve_optimizer("muon")
-    assert spec.is_custom
-    assert spec.hf_optim is None
-
-
-def test_unknown_optimizer_raises():
-    with pytest.raises(ValueError, match="Unknown optimizer"):
-        resolve_optimizer("nope")
-
-
-def test_build_hf_native_directly_is_error(tiny_model):
-    with pytest.raises(ValueError, match="HF-native"):
-        build_optimizer("adamw", tiny_model, OptimizerSettings())
-
-
-# ----------------------------------------------------------------------
 # Muon partition (2D hidden -> Muon, rest -> AdamW) + CombinedOptimizer
 # ----------------------------------------------------------------------
 
 
 def test_build_muon_returns_combined_optimizer(tiny_model):
-    opt = build_optimizer("muon", tiny_model, OptimizerSettings(lr=1e-3))
+    opt = build_muon_optimizer(tiny_model, OptimizerSettings(lr=1e-3))
     assert isinstance(opt, CombinedOptimizer)
     assert isinstance(opt, torch.optim.Optimizer)  # required by LR schedulers
     assert len(opt.optimizers) == 2  # Muon + AdamW

@@ -1,20 +1,23 @@
 # ablm-forge
 
 Lab base model-architecture repo for antibody/protein language-model
-experiments. An ESM-style bidirectional encoder wired to
-the stock HuggingFace `Trainer`, launched via `torchrun` + FSDP2, with
-SDPA-based attention and a pluggable optimizer registry.
+experiments. An ESM-style bidirectional encoder wired to the stock HuggingFace
+`Trainer`, launched via `torchrun` + FSDP2, with SDPA-based attention and an
+optional Muon optimizer.
 
-> Status: under construction. See `docs`/the plan for the build roadmap.
+It's a **library, not a framework**: there is no config system or CLI. You
+compose the building blocks (`AblmConfig`, `build_train_dataset`,
+`build_collator`, an optimizer, `transformers.Trainer`) in a training script.
+`scripts/pretrain.py` is a complete, copy-and-edit example.
 
 ## Reference architecture
 
 Defaults track **ESM-C** (EvolutionaryScale Cambrian): Pre-LN, full RoPE,
 SwiGLU, bias-free linear layers + layer norms, no QK-norm, no residual scaling,
-no token dropout, and the bit-for-bit ESM-C 33-token tokenizer. Exact-size
-presets: `esmc_300m`, `esmc_600m`, `esmc_6b`. Everything beyond ESM-C
-(`qk_norm`, `residual_scaling`, `norm_strategy`, partial RoPE, and ESM-2-style
-`token_dropout`) is an opt-in experiment knob.
+no token dropout, and the bit-for-bit ESM-C 33-token tokenizer. Everything beyond
+ESM-C (`qk_norm`, `residual_scaling`, `norm_strategy`, partial RoPE, ESM-2-style
+`token_dropout`) is an opt-in `AblmConfig` knob. ESM-C sizes are head_dim-64 at
+30L/960, 36L/1152, 80L/2560 (300M / 600M / 6B).
 
 ## Install
 
@@ -24,41 +27,53 @@ uv venv && uv pip install -e ".[dev,train]"
 
 ## Train
 
+Edit `scripts/pretrain.py` (or write your own), then:
+
 ```bash
 # single GPU
-ablm train --config run.yaml
-# CLI dotlist + preset overrides
-ablm train --preset 170M model.num_hidden_layers=24 train.lr=2e-4
-# multi-GPU + FSDP2 (set train.fsdp: "full_shard auto_wrap" in the YAML)
-torchrun --standalone --nproc_per_node=8 -m ablm.train --config run.yaml
-# inspect what's registered
-ablm info
+python scripts/pretrain.py --data /data/train.parquet --output-dir out
+# multi-GPU + FSDP2
+torchrun --standalone --nproc_per_node=8 scripts/pretrain.py \
+    --data /data/train/ --output-dir out --fsdp --bf16 --gradient-checkpointing
+```
+
+`--data` is a parquet file or directory of shards with `sequence_id` + `sequence`
+columns (shard into multiple parquet files for `--num-workers > 1`).
+
+A minimal script is just:
+
+```python
+from transformers import Trainer, TrainingArguments
+from ablm import AblmConfig, AblmForMaskedLM
+from ablm.data import build_train_dataset, build_collator
+
+model = AblmForMaskedLM(AblmConfig())          # architecture knobs here
+ds = build_train_dataset("train.parquet", max_length=1024, seed=42)
+args = TrainingArguments(output_dir="out", max_steps=100_000, optim="adamw_torch", bf16=True)
+Trainer(model=model, args=args, train_dataset=ds, data_collator=build_collator()).train()
 ```
 
 ## Optimizers, schedulers, attention
 
 - **Attention** — just `F.scaled_dot_product_attention`, which auto-selects the
   fastest fused backend (FlashAttention / cuDNN / mem-efficient) at runtime. A
-  manual fp32-softmax path runs only when you request `output_attentions=True`
-  (SDPA can't return attention weights). Nothing to configure.
-- **Optimizer** — set `train.optimizer` to `adamw`, `adamw_fused`, `adafactor`,
-  or `muon`. Add one by adding an entry to the `OPTIMIZERS` dict in
-  `ablm/training/optim.py` — either an HF `optim` string or a
-  `builder(model, settings)` for an optimizer HF doesn't ship. No `Trainer`
-  subclass is involved.
-- **LR schedule** — `train.scheduler` ∈ `warmup_linear`, `warmup_cosine`,
-  `wsd_linear`, `wsd_cosine`, mapped onto HF's native `lr_scheduler_type`.
+  manual fp32-softmax path runs only when you request `output_attentions=True`.
+  Nothing to configure.
+- **Optimizer** — HF-native ones are `TrainingArguments(optim="adamw_torch" | …)`.
+  Muon (2D-hidden Muon + AdamW for the rest) is built with
+  `ablm.training.optim.build_muon_optimizer(model, OptimizerSettings(...))` and
+  passed via `Trainer(..., optimizers=(opt, None))`. No `Trainer` subclass.
+- **LR schedule** — `TrainingArguments.lr_scheduler_type` (`linear`, `cosine`,
+  `cosine_with_min_lr`, `warmup_stable_decay`, …).
 
 > Note: Muon's Newton-Schulz step assumes full 2D weights; under FSDP2 sharding
 > it is mathematically approximate. Validate Muon under single-GPU / DDP first.
 
 ## Layout
 
-- `src/ablm/model/` — the encoder, heads, and config (`AblmConfig`,
-  `AblmForMaskedLM`, …), registered with the HuggingFace Auto* classes.
-- `src/ablm/model/attention.py` — SDPA attention (+ a manual-softmax fallback
-  for `output_attentions`).
-- `src/ablm/training/` — optimizer registry (no `Trainer` subclass).
+- `src/ablm/model/` — the encoder, heads, and `AblmConfig`, registered with the
+  HuggingFace Auto* classes. Attention is SDPA + a manual-softmax fallback.
 - `src/ablm/data/` — tokenizer + 🤗 `datasets` streaming loader
   (`build_train_dataset`) + HF `DataCollatorForLanguageModeling` (`build_collator`).
-- `src/ablm/train.py` — `torchrun -m ablm.train --config <yaml>` entry point.
+- `src/ablm/training/optim.py` — Muon `CombinedOptimizer` + `build_muon_optimizer`.
+- `scripts/pretrain.py` — example training entry point (torchrun-launchable).

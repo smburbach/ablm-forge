@@ -13,7 +13,6 @@ import pytest
 import torch
 
 from ablm import AblmConfig, AblmForMaskedLM
-from ablm.config import load_config
 from ablm.model.embedding import _TOKEN_DROPOUT_MASK_RATIO_TRAIN, AblmEmbedding
 from ablm.model.norm import AblmLayerNorm
 
@@ -62,18 +61,19 @@ def test_norm_bias_true_restores_bias():
     assert all(ln.bias is not None for ln in layernorms)
 
 
-@pytest.mark.parametrize("preset", ["esmc_300m", "esmc_600m", "esmc_6b"])
-def test_esmc_presets_have_exact_dims_and_head_dim_64(preset):
-    cfg = load_config(["--preset", preset]).model
-    assert cfg.head_dim == 64
-    assert cfg.max_position_embeddings == 2048
+@pytest.mark.parametrize(
+    ("layers", "hidden", "heads"),
+    [(30, 960, 15), (36, 1152, 18), (80, 2560, 40)],  # ESM-C 300M / 600M / 6B
+)
+def test_esmc_exact_sizes_are_expressible(layers, hidden, heads):
+    cfg = AblmConfig(
+        num_hidden_layers=layers,
+        hidden_size=hidden,
+        num_attention_heads=heads,
+        max_position_embeddings=2048,
+    )
+    assert cfg.head_dim == 64  # all ESM-C sizes use head_dim 64
     assert cfg.qk_norm is False and cfg.residual_scaling == "none"
-    expected = {
-        "esmc_300m": (30, 960, 15),
-        "esmc_600m": (36, 1152, 18),
-        "esmc_6b": (80, 2560, 40),
-    }[preset]
-    assert (cfg.num_hidden_layers, cfg.hidden_size, cfg.num_attention_heads) == expected
 
 
 # ---------------------------------------------------------------------------

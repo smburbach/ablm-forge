@@ -1,14 +1,9 @@
-"""Tests for the data-config parsing helpers and ``DataConfig`` validation.
-
-Covers :func:`ablm.data.config.parse_train_configs` and the masking-split
-validation on :class:`ablm.config.DataConfig`.
-"""
+"""Tests for the training-dataset spec parser (`parse_train_configs`)."""
 
 from __future__ import annotations
 
 import pytest
 
-from ablm.config import DataConfig
 from ablm.data.config import parse_train_configs
 
 # --------------------------------------------------------------------------- #
@@ -119,40 +114,3 @@ def test_parse_train_invalid_type_raises(raw: object) -> None:
     """A train config that is neither a string nor a mapping is rejected."""
     with pytest.raises(ValueError, match="must be a path string or a"):
         parse_train_configs(raw)
-
-
-# --------------------------------------------------------------------------- #
-# DataConfig masking-split validation
-# --------------------------------------------------------------------------- #
-
-
-def test_dataconfig_defaults_are_valid() -> None:
-    """The default masking split passes validation and matches the spec."""
-    cfg = DataConfig()
-    assert cfg.mask_prob == pytest.approx(0.15)
-    assert cfg.mask_token_prob == pytest.approx(0.8)
-    assert cfg.random_token_prob == pytest.approx(0.1)
-    assert cfg.shuffle_buffer_size == 10_000
-
-
-def test_dataconfig_split_sum_one_is_valid() -> None:
-    """A split summing exactly to 1.0 (no keep-original mass) is allowed."""
-    cfg = DataConfig(mask_token_prob=0.8, random_token_prob=0.2)
-    assert cfg.mask_token_prob + cfg.random_token_prob == pytest.approx(1.0)
-
-
-@pytest.mark.parametrize("value", [-0.01, 1.01])
-def test_dataconfig_mask_token_prob_out_of_range_raises(value: float) -> None:
-    with pytest.raises(ValueError, match="mask_token_prob must be in"):
-        DataConfig(mask_token_prob=value)
-
-
-@pytest.mark.parametrize("value", [-0.01, 1.01])
-def test_dataconfig_random_token_prob_out_of_range_raises(value: float) -> None:
-    with pytest.raises(ValueError, match="random_token_prob must be in"):
-        DataConfig(random_token_prob=value)
-
-
-def test_dataconfig_split_sum_above_one_raises() -> None:
-    with pytest.raises(ValueError, match=r"must be <= 1"):
-        DataConfig(mask_token_prob=0.7, random_token_prob=0.5)
