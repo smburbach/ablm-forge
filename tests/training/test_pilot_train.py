@@ -11,10 +11,10 @@ from __future__ import annotations
 
 import pytest
 import torch
-from transformers import Trainer, TrainingArguments
+from transformers import DataCollatorForLanguageModeling, Trainer, TrainingArguments
 
 from ablm import AblmConfig, AblmForMaskedLM
-from ablm.data import build_collator, build_train_dataset
+from ablm.data import build_train_dataset, get_tokenizer
 from ablm.training.optim import OptimizerSettings, build_muon_optimizer
 
 pytestmark = pytest.mark.slow
@@ -56,7 +56,7 @@ def _build_trainer(parquet, output_dir, *, optimizer="adamw", max_steps=8, save_
         model=model,
         args=args,
         train_dataset=dataset,
-        data_collator=build_collator(),
+        data_collator=DataCollatorForLanguageModeling(tokenizer=get_tokenizer(), mlm=True),
         optimizers=optimizers,
     )
 

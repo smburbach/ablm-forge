@@ -1,9 +1,10 @@
 """Example MLM pretraining script for ablm-forge.
 
 ablm-forge is a library, not a framework: there is no config system or CLI. You
-compose the building blocks — `AblmConfig`, `build_train_dataset`,
-`build_collator`, an optimizer, and the stock `transformers.Trainer` — in a
-script like this one and launch it. Copy and edit it for your runs.
+compose the building blocks — `AblmConfig`, `build_train_dataset`, a
+`DataCollatorForLanguageModeling`, an optimizer, and the stock
+`transformers.Trainer` — in a script like this one and launch it. Copy and edit
+it for your runs.
 
     # single GPU
     python scripts/pretrain.py --data /data/train.parquet --output-dir out
@@ -20,10 +21,10 @@ from __future__ import annotations
 
 import argparse
 
-from transformers import Trainer, TrainingArguments
+from transformers import DataCollatorForLanguageModeling, Trainer, TrainingArguments
 
 from ablm import AblmConfig, AblmForMaskedLM
-from ablm.data import build_collator, build_train_dataset
+from ablm.data import build_train_dataset, get_tokenizer
 from ablm.training.optim import OptimizerSettings, build_muon_optimizer
 
 # HF-native optimizers are just TrainingArguments.optim strings.
@@ -75,7 +76,7 @@ def main() -> None:
         seed=args.seed,
         shuffle_buffer_size=args.shuffle_buffer,
     )
-    collator = build_collator()
+    collator = DataCollatorForLanguageModeling(tokenizer=get_tokenizer(), mlm=True)
 
     # FSDP2: shard on the AblmBlock; route activation checkpointing into fsdp_config
     # (the Trainer's gradient_checkpointing adds a redundant all-gather under FSDP).

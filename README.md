@@ -6,9 +6,9 @@ experiments. An ESM-style bidirectional encoder wired to the stock HuggingFace
 optional Muon optimizer.
 
 It's a **library, not a framework**: there is no config system or CLI. You
-compose the building blocks (`AblmConfig`, `build_train_dataset`,
-`build_collator`, an optimizer, `transformers.Trainer`) in a training script.
-`scripts/pretrain.py` is a complete, copy-and-edit example.
+compose the building blocks (`AblmConfig`, `build_train_dataset`, a
+`DataCollatorForLanguageModeling`, an optimizer, `transformers.Trainer`) in a
+training script. `scripts/pretrain.py` is a complete, copy-and-edit example.
 
 ## Reference architecture
 
@@ -43,14 +43,15 @@ columns (shard into multiple parquet files for `--num-workers > 1`).
 A minimal script is just:
 
 ```python
-from transformers import Trainer, TrainingArguments
+from transformers import DataCollatorForLanguageModeling, Trainer, TrainingArguments
 from ablm import AblmConfig, AblmForMaskedLM
-from ablm.data import build_train_dataset, build_collator
+from ablm.data import build_train_dataset, get_tokenizer
 
 model = AblmForMaskedLM(AblmConfig())          # architecture knobs here
 ds = build_train_dataset("train.parquet", max_length=1024, seed=42)
+collator = DataCollatorForLanguageModeling(tokenizer=get_tokenizer(), mlm=True)
 args = TrainingArguments(output_dir="out", max_steps=100_000, optim="adamw_torch", bf16=True)
-Trainer(model=model, args=args, train_dataset=ds, data_collator=build_collator()).train()
+Trainer(model=model, args=args, train_dataset=ds, data_collator=collator).train()
 ```
 
 ## Optimizers, schedulers, attention
@@ -73,7 +74,7 @@ Trainer(model=model, args=args, train_dataset=ds, data_collator=build_collator()
 
 - `src/ablm/model/` — the encoder, heads, and `AblmConfig`, registered with the
   HuggingFace Auto* classes. Attention is SDPA + a manual-softmax fallback.
-- `src/ablm/data/` — tokenizer + 🤗 `datasets` streaming loader
-  (`build_train_dataset`) + HF `DataCollatorForLanguageModeling` (`build_collator`).
+- `src/ablm/data/` — tokenizer (`get_tokenizer`) + 🤗 `datasets` streaming loader
+  (`build_train_dataset`); pad/mask with HF `DataCollatorForLanguageModeling`.
 - `src/ablm/training/optim.py` — Muon `CombinedOptimizer` + `build_muon_optimizer`.
 - `scripts/pretrain.py` — example training entry point (torchrun-launchable).

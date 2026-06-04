@@ -14,7 +14,6 @@ import sys
 _SUBMODULES = [
     "ablm.data",
     "ablm.data.tokenizer",
-    "ablm.data.config",
     "ablm.data.loaders",
 ]
 

@@ -1,20 +1,16 @@
 """ABLM data tooling.
 
-Streaming MLM data built on 🤗 `datasets` + `transformers`: `build_train_dataset`
-streams/tokenizes/mixes parquet sources, `build_collator` is the stock
-masked-LM collator. The public surface re-exported below feeds the HF Trainer.
+`build_train_dataset` streams/tokenizes/mixes parquet sources via 🤗 `datasets`;
+pad/mask its output with `transformers.DataCollatorForLanguageModeling` in your
+training script. `get_tokenizer` returns the shared ESM-C tokenizer.
 """
 
 from __future__ import annotations
 
-from ablm.data.config import TrainDatasetEntry, parse_train_configs
-from ablm.data.loaders import build_collator, build_train_dataset
+from ablm.data.loaders import build_train_dataset
 from ablm.data.tokenizer import get_tokenizer
 
 __all__ = [
-    "TrainDatasetEntry",
-    "build_collator",
     "build_train_dataset",
     "get_tokenizer",
-    "parse_train_configs",
 ]
