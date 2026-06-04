@@ -20,11 +20,9 @@ into multiple parquet files for `--num-workers > 1`).
 from __future__ import annotations
 
 import argparse
-import os
 from pathlib import Path
 
 from datasets import load_dataset
-from datasets.distributed import split_dataset_by_node
 from transformers import DataCollatorForLanguageModeling, Trainer, TrainingArguments
 
 from ablm import AblmConfig, AblmForMaskedLM, AblmTokenizerFast
@@ -37,7 +35,10 @@ _HF_OPTIM = {"adamw": "adamw_torch", "adamw_fused": "adamw_torch_fused", "adafac
 def build_dataset(data: str, *, max_length: int, seed: int, shuffle_buffer: int):
     """Stream + tokenize parquet into an MLM `datasets.IterableDataset`.
 
-    A single source; edit to add `datasets.interleave_datasets` for mixing.
+    Single-source and single-node. Edit to add `datasets.interleave_datasets` for
+    mixing. To scale to multiple processes/nodes, shard per rank with
+    `datasets.distributed.split_dataset_by_node` (and set the Trainer's
+    `accelerator_config={"dispatch_batches": False}`).
     """
     data_files = f"{data}/*.parquet" if Path(data).is_dir() else data
     ds = load_dataset("parquet", data_files=data_files, split="train", streaming=True)
@@ -49,11 +50,7 @@ def build_dataset(data: str, *, max_length: int, seed: int, shuffle_buffer: int)
         batched=True,
         remove_columns=ds.column_names,
     )
-    ds = ds.shuffle(seed=seed, buffer_size=shuffle_buffer)
-    world_size = int(os.environ.get("WORLD_SIZE", "1"))
-    if world_size > 1:  # each rank streams its own shard
-        ds = split_dataset_by_node(ds, rank=int(os.environ.get("RANK", "0")), world_size=world_size)
-    return ds
+    return ds.shuffle(seed=seed, buffer_size=shuffle_buffer)
 
 
 def parse_args() -> argparse.Namespace:
@@ -129,8 +126,6 @@ def main() -> None:
         fsdp=fsdp,
         fsdp_config=fsdp_config,
         dataloader_num_workers=args.num_workers,
-        # Each rank streams its own node shard; don't re-dispatch from rank 0.
-        accelerator_config={"dispatch_batches": False},
         save_steps=args.save_steps,
         logging_steps=10,
         report_to="none",

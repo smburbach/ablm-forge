@@ -92,9 +92,11 @@ scripts/pretrain.py             # example training script: data loading + Traine
 tests/                          # pytest, mirrors src/
 ```
 
-Data loading (stream parquet via 🤗 `datasets` + tokenize + shuffle + shard) is
-*not* in the package — it's ~12 lines of standard `datasets` calls that live in
-the training script (`scripts/pretrain.py`), so each run owns and can edit it.
+Data loading (stream parquet via 🤗 `datasets` + tokenize + shuffle) is *not* in
+the package — it's a handful of standard `datasets` calls in the training script
+(`scripts/pretrain.py`), so each run owns and can edit it. It's single-node;
+`split_dataset_by_node` would be added there only when scaling to multiple
+processes/nodes.
 
 ## Launching training
 
