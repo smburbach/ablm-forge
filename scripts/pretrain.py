@@ -23,8 +23,8 @@ import argparse
 
 from transformers import DataCollatorForLanguageModeling, Trainer, TrainingArguments
 
-from ablm import AblmConfig, AblmForMaskedLM
-from ablm.data import build_train_dataset, get_tokenizer
+from ablm import AblmConfig, AblmForMaskedLM, AblmTokenizerFast
+from ablm.data import build_train_dataset
 from ablm.training.optim import OptimizerSettings, build_muon_optimizer
 
 # HF-native optimizers are just TrainingArguments.optim strings.
@@ -76,7 +76,7 @@ def main() -> None:
         seed=args.seed,
         shuffle_buffer_size=args.shuffle_buffer,
     )
-    collator = DataCollatorForLanguageModeling(tokenizer=get_tokenizer(), mlm=True)
+    collator = DataCollatorForLanguageModeling(tokenizer=AblmTokenizerFast(), mlm=True)
 
     # FSDP2: shard on the AblmBlock; route activation checkpointing into fsdp_config
     # (the Trainer's gradient_checkpointing adds a redundant all-gather under FSDP).

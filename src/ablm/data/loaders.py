@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 from datasets import interleave_datasets, load_dataset
 from datasets.distributed import split_dataset_by_node
 
-from ablm.data.tokenizer import get_tokenizer
+from ablm.model import AblmTokenizerFast
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -64,7 +64,7 @@ def build_train_dataset(
     if not paths:
         raise ValueError("No training data: pass a parquet path or a sequence of paths.")
 
-    tokenizer = get_tokenizer()
+    tokenizer = AblmTokenizerFast()
 
     def tokenize(batch: dict[str, list]) -> dict[str, list]:
         return tokenizer(

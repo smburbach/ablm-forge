@@ -6,7 +6,7 @@ import pytest
 import torch
 from transformers import DataCollatorForLanguageModeling
 
-from ablm.data import get_tokenizer
+from ablm import AblmTokenizerFast
 from ablm.data.loaders import build_train_dataset
 
 
@@ -45,7 +45,7 @@ def test_collated_batch_runs_through_model(training_parquet):
     from ablm import AblmConfig, AblmForMaskedLM
 
     ds = build_train_dataset(str(training_parquet), max_length=64, seed=0)
-    collator = DataCollatorForLanguageModeling(tokenizer=get_tokenizer(), mlm=True)
+    collator = DataCollatorForLanguageModeling(tokenizer=AblmTokenizerFast(), mlm=True)
     batch = collator([ex for ex, _ in zip(ds, range(2), strict=False)])
     assert {"input_ids", "attention_mask", "labels"} <= set(batch)
     assert bool((batch["labels"] == -100).any())  # unmasked positions ignored

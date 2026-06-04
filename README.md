@@ -44,12 +44,12 @@ A minimal script is just:
 
 ```python
 from transformers import DataCollatorForLanguageModeling, Trainer, TrainingArguments
-from ablm import AblmConfig, AblmForMaskedLM
-from ablm.data import build_train_dataset, get_tokenizer
+from ablm import AblmConfig, AblmForMaskedLM, AblmTokenizerFast
+from ablm.data import build_train_dataset
 
 model = AblmForMaskedLM(AblmConfig())          # architecture knobs here
 ds = build_train_dataset("train.parquet", max_length=1024, seed=42)
-collator = DataCollatorForLanguageModeling(tokenizer=get_tokenizer(), mlm=True)
+collator = DataCollatorForLanguageModeling(tokenizer=AblmTokenizerFast(), mlm=True)
 args = TrainingArguments(output_dir="out", max_steps=100_000, optim="adamw_torch", bf16=True)
 Trainer(model=model, args=args, train_dataset=ds, data_collator=collator).train()
 ```
@@ -74,7 +74,7 @@ Trainer(model=model, args=args, train_dataset=ds, data_collator=collator).train(
 
 - `src/ablm/model/` — the encoder, heads, and `AblmConfig`, registered with the
   HuggingFace Auto* classes. Attention is SDPA + a manual-softmax fallback.
-- `src/ablm/data/` — tokenizer (`get_tokenizer`) + 🤗 `datasets` streaming loader
-  (`build_train_dataset`); pad/mask with HF `DataCollatorForLanguageModeling`.
+- `src/ablm/data/` — 🤗 `datasets` streaming loader (`build_train_dataset`);
+  pad/mask with HF `DataCollatorForLanguageModeling` + `AblmTokenizerFast`.
 - `src/ablm/training/optim.py` — Muon `CombinedOptimizer` + `build_muon_optimizer`.
 - `scripts/pretrain.py` — example training entry point (torchrun-launchable).

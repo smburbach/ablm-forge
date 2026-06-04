@@ -88,7 +88,7 @@ src/ablm/
 │   └── modeling_ablm.py        # all public Ablm* model classes
 ├── training/
 │   └── optim.py                # Muon CombinedOptimizer + build_muon_optimizer
-└── data/                       # tokenizer + 🤗 datasets streaming loader + HF MLM collator
+└── data/                       # 🤗 datasets streaming loader (build_train_dataset)
 scripts/pretrain.py             # example training entry point (not part of the package)
 tests/                          # pytest, mirrors src/
 ```
