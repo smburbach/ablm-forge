@@ -1,7 +1,7 @@
 """Example MLM pretraining script for ablm-forge.
 
-ablm-forge is a library, not a framework: there is no config system or CLI. You
-compose the building blocks — `AblmConfig`, `build_train_dataset`, a
+ablm-forge is a library, not a framework: there is no config system, CLI, or data
+module. You compose the building blocks — `AblmConfig`, a 🤗 `datasets` stream, a
 `DataCollatorForLanguageModeling`, an optimizer, and the stock
 `transformers.Trainer` — in a script like this one and launch it. Copy and edit
 it for your runs.
@@ -20,15 +20,40 @@ into multiple parquet files for `--num-workers > 1`).
 from __future__ import annotations
 
 import argparse
+import os
+from pathlib import Path
 
+from datasets import load_dataset
+from datasets.distributed import split_dataset_by_node
 from transformers import DataCollatorForLanguageModeling, Trainer, TrainingArguments
 
 from ablm import AblmConfig, AblmForMaskedLM, AblmTokenizerFast
-from ablm.data import build_train_dataset
 from ablm.training.optim import OptimizerSettings, build_muon_optimizer
 
 # HF-native optimizers are just TrainingArguments.optim strings.
 _HF_OPTIM = {"adamw": "adamw_torch", "adamw_fused": "adamw_torch_fused", "adafactor": "adafactor"}
+
+
+def build_dataset(data: str, *, max_length: int, seed: int, shuffle_buffer: int):
+    """Stream + tokenize parquet into an MLM `datasets.IterableDataset`.
+
+    A single source; edit to add `datasets.interleave_datasets` for mixing.
+    """
+    data_files = f"{data}/*.parquet" if Path(data).is_dir() else data
+    ds = load_dataset("parquet", data_files=data_files, split="train", streaming=True)
+    tokenizer = AblmTokenizerFast()
+    ds = ds.map(
+        lambda b: tokenizer(
+            b["sequence"], truncation=True, max_length=max_length, return_special_tokens_mask=True
+        ),
+        batched=True,
+        remove_columns=ds.column_names,
+    )
+    ds = ds.shuffle(seed=seed, buffer_size=shuffle_buffer)
+    world_size = int(os.environ.get("WORLD_SIZE", "1"))
+    if world_size > 1:  # each rank streams its own shard
+        ds = split_dataset_by_node(ds, rank=int(os.environ.get("RANK", "0")), world_size=world_size)
+    return ds
 
 
 def parse_args() -> argparse.Namespace:
@@ -70,11 +95,8 @@ def main() -> None:
         )
     )
 
-    dataset = build_train_dataset(
-        args.data,
-        max_length=args.max_length,
-        seed=args.seed,
-        shuffle_buffer_size=args.shuffle_buffer,
+    dataset = build_dataset(
+        args.data, max_length=args.max_length, seed=args.seed, shuffle_buffer=args.shuffle_buffer
     )
     collator = DataCollatorForLanguageModeling(tokenizer=AblmTokenizerFast(), mlm=True)
 

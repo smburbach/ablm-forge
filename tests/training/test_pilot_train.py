@@ -11,15 +11,28 @@ from __future__ import annotations
 
 import pytest
 import torch
+from datasets import load_dataset
 from transformers import DataCollatorForLanguageModeling, Trainer, TrainingArguments
 
 from ablm import AblmConfig, AblmForMaskedLM, AblmTokenizerFast
-from ablm.data import build_train_dataset
 from ablm.training.optim import OptimizerSettings, build_muon_optimizer
 
 pytestmark = pytest.mark.slow
 
 _MAX_LENGTH = 64
+
+
+def _stream_dataset(parquet):
+    """The streaming + tokenize recipe from scripts/pretrain.py, inlined."""
+    tokenizer = AblmTokenizerFast()
+    ds = load_dataset("parquet", data_files=str(parquet), split="train", streaming=True)
+    return ds.map(
+        lambda b: tokenizer(
+            b["sequence"], truncation=True, max_length=_MAX_LENGTH, return_special_tokens_mask=True
+        ),
+        batched=True,
+        remove_columns=ds.column_names,
+    ).shuffle(seed=42, buffer_size=1024)
 
 
 def _build_trainer(parquet, output_dir, *, optimizer="adamw", max_steps=8, save_steps=4) -> Trainer:
@@ -48,7 +61,7 @@ def _build_trainer(parquet, output_dir, *, optimizer="adamw", max_steps=8, save_
         seed=42,
         dataloader_num_workers=0,
     )
-    dataset = build_train_dataset(str(parquet), max_length=_MAX_LENGTH, seed=42)
+    dataset = _stream_dataset(parquet)
     optimizers = (None, None)
     if optimizer == "muon":
         optimizers = (build_muon_optimizer(model, OptimizerSettings(lr=1e-3)), None)

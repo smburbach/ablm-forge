@@ -5,8 +5,8 @@ experiments. An ESM-style bidirectional encoder wired to the stock HuggingFace
 `Trainer`, launched via `torchrun` + FSDP2, with SDPA-based attention and an
 optional Muon optimizer.
 
-It's a **library, not a framework**: there is no config system or CLI. You
-compose the building blocks (`AblmConfig`, `build_train_dataset`, a
+It's a **library, not a framework**: no config system, CLI, or data module. You
+compose the building blocks (`AblmConfig`, a 🤗 `datasets` stream, a
 `DataCollatorForLanguageModeling`, an optimizer, `transformers.Trainer`) in a
 training script. `scripts/pretrain.py` is a complete, copy-and-edit example.
 
@@ -43,13 +43,19 @@ columns (shard into multiple parquet files for `--num-workers > 1`).
 A minimal script is just:
 
 ```python
+from datasets import load_dataset
 from transformers import DataCollatorForLanguageModeling, Trainer, TrainingArguments
 from ablm import AblmConfig, AblmForMaskedLM, AblmTokenizerFast
-from ablm.data import build_train_dataset
+
+tok = AblmTokenizerFast()
+ds = load_dataset("parquet", data_files="train.parquet", split="train", streaming=True)
+ds = ds.map(
+    lambda b: tok(b["sequence"], truncation=True, max_length=1024, return_special_tokens_mask=True),
+    batched=True, remove_columns=ds.column_names,
+).shuffle(seed=42, buffer_size=10_000)
 
 model = AblmForMaskedLM(AblmConfig())          # architecture knobs here
-ds = build_train_dataset("train.parquet", max_length=1024, seed=42)
-collator = DataCollatorForLanguageModeling(tokenizer=AblmTokenizerFast(), mlm=True)
+collator = DataCollatorForLanguageModeling(tokenizer=tok, mlm=True)
 args = TrainingArguments(output_dir="out", max_steps=100_000, optim="adamw_torch", bf16=True)
 Trainer(model=model, args=args, train_dataset=ds, data_collator=collator).train()
 ```
@@ -72,9 +78,9 @@ Trainer(model=model, args=args, train_dataset=ds, data_collator=collator).train(
 
 ## Layout
 
-- `src/ablm/model/` — the encoder, heads, and `AblmConfig`, registered with the
-  HuggingFace Auto* classes. Attention is SDPA + a manual-softmax fallback.
-- `src/ablm/data/` — 🤗 `datasets` streaming loader (`build_train_dataset`);
-  pad/mask with HF `DataCollatorForLanguageModeling` + `AblmTokenizerFast`.
+- `src/ablm/model/` — the encoder, heads, `AblmConfig`, and `AblmTokenizerFast`,
+  registered with the HuggingFace Auto* classes. Attention is SDPA + a
+  manual-softmax fallback.
 - `src/ablm/training/optim.py` — Muon `CombinedOptimizer` + `build_muon_optimizer`.
+- `scripts/pretrain.py` — example training script (data loading + Trainer wiring).
 - `scripts/pretrain.py` — example training entry point (torchrun-launchable).

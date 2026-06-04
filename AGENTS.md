@@ -86,12 +86,15 @@ src/ablm/
 │   ├── configuration_ablm.py   # AblmConfig
 │   ├── tokenization_ablm.py    # AblmTokenizerFast (33-token ESM-C vocab)
 │   └── modeling_ablm.py        # all public Ablm* model classes
-├── training/
-│   └── optim.py                # Muon CombinedOptimizer + build_muon_optimizer
-└── data/                       # 🤗 datasets streaming loader (build_train_dataset)
-scripts/pretrain.py             # example training entry point (not part of the package)
+└── training/
+    └── optim.py                # Muon CombinedOptimizer + build_muon_optimizer
+scripts/pretrain.py             # example training script: data loading + Trainer wiring
 tests/                          # pytest, mirrors src/
 ```
+
+Data loading (stream parquet via 🤗 `datasets` + tokenize + shuffle + shard) is
+*not* in the package — it's ~12 lines of standard `datasets` calls that live in
+the training script (`scripts/pretrain.py`), so each run owns and can edit it.
 
 ## Launching training
 
