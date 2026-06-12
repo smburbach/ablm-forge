@@ -68,13 +68,16 @@ Trainer(model=model, args=args, train_dataset=ds, data_collator=collator).train(
   Nothing to configure.
 - **Optimizer** — HF-native ones are `TrainingArguments(optim="adamw_torch" | …)`.
   Muon (2D-hidden Muon + AdamW for the rest) is built with
-  `ablm.training.optim.build_muon_optimizer(model, OptimizerSettings(...))` and
+  `ablm.training.optim.build_muon_optimizer(model, lr=..., weight_decay=...)` and
   passed via `Trainer(..., optimizers=(opt, None))`. No `Trainer` subclass.
 - **LR schedule** — `TrainingArguments.lr_scheduler_type` (`linear`, `cosine`,
   `cosine_with_min_lr`, `warmup_stable_decay`, …).
 
-> Note: Muon's Newton-Schulz step assumes full 2D weights; under FSDP2 sharding
-> it is mathematically approximate. Validate Muon under single-GPU / DDP first.
+> Note: Muon checkpoints round-trip on a single GPU / DDP and through torch's
+> FSDP distributed-checkpoint path. But its Newton-Schulz step assumes full 2D
+> weights, so under FSDP2 sharding the orthogonalization runs per-shard and is
+> only correct if DTensor redistributes it — validate Muon on multiple GPUs
+> before trusting it; AdamW is the safe FSDP default.
 
 ## Layout
 

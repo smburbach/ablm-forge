@@ -23,10 +23,10 @@ import argparse
 from pathlib import Path
 
 from datasets import load_dataset
-from transformers import DataCollatorForLanguageModeling, Trainer, TrainingArguments
+from transformers import DataCollatorForLanguageModeling, TrainingArguments
 
 from ablm import AblmConfig, AblmForMaskedLM, AblmTokenizerFast
-from ablm.training.optim import OptimizerSettings, build_muon_optimizer
+from ablm.training.optim import MUON_OPTIM, OptimizerTrainer
 
 # HF-native optimizers are just TrainingArguments.optim strings.
 _HF_OPTIM = {"adamw": "adamw_torch", "adamw_fused": "adamw_torch_fused", "adafactor": "adafactor"}
@@ -68,7 +68,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--lr", type=float, default=4e-4)
     p.add_argument("--weight-decay", type=float, default=0.01)
     p.add_argument("--warmup-steps", type=int, default=2_000)
-    p.add_argument("--optimizer", choices=[*_HF_OPTIM, "muon"], default="adamw")
+    p.add_argument("--optimizer", choices=[*_HF_OPTIM, MUON_OPTIM], default="adamw")
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--shuffle-buffer", type=int, default=10_000)
     p.add_argument("--num-workers", type=int, default=0)
@@ -120,6 +120,7 @@ def main() -> None:
         warmup_steps=args.warmup_steps,
         lr_scheduler_type="linear",
         optim=_HF_OPTIM.get(args.optimizer, "adamw_torch"),
+        adam_beta2=0.98,  # ESM-2 / ESM-C use beta2=0.98 for the AdamW arm
         bf16=args.bf16,
         gradient_checkpointing=grad_ckpt_arg,
         gradient_checkpointing_kwargs={"use_reentrant": False},
@@ -133,21 +134,16 @@ def main() -> None:
         seed=args.seed,
     )
 
-    # HF-native optimizers come from training_args.optim; Muon is built here and
-    # passed through the Trainer's optimizers= tuple (scheduler stays from args).
-    optimizers = (None, None)
-    if args.optimizer == "muon":
-        optimizer = build_muon_optimizer(
-            model, OptimizerSettings(lr=args.lr, weight_decay=args.weight_decay)
-        )
-        optimizers = (optimizer, None)
-
-    trainer = Trainer(
+    # HF-native optimizers (adamw, …) come straight from training_args.optim. Muon is the
+    # one HF doesn't ship: OptimizerTrainer builds it in create_optimizer (after FSDP
+    # sharding) when use_muon is set — a subclass is required because HF rejects a pre-built
+    # optimizers= tuple under FSDP. The scheduler still comes from args.
+    trainer = OptimizerTrainer(
         model=model,
         args=training_args,
         train_dataset=dataset,
         data_collator=collator,
-        optimizers=optimizers,
+        use_muon=args.optimizer == MUON_OPTIM,
     )
     trainer.train()
     trainer.save_model()

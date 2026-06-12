@@ -57,10 +57,14 @@ MLP FFN, which is not yet implemented — only SwiGLU is.)
   (a `PretrainedConfig`) for the model, `transformers.TrainingArguments` for
   training, composed in a script (`scripts/pretrain.py`). Don't add OmegaConf /
   YAML config trees / a `train` CLI / presets.
-- **No `Trainer` subclass, no custom trainer loop.** Use stock
-  `transformers.Trainer` directly. HF-native optimizers via
-  `TrainingArguments.optim`; Muon via `build_muon_optimizer` + the `optimizers=`
-  tuple. Schedules via `lr_scheduler_type`.
+- **No custom trainer loop; subclass `Trainer` only to build Muon.** Use stock
+  `transformers.Trainer`. HF-native optimizers via `TrainingArguments.optim`;
+  schedules via `lr_scheduler_type`. The *one* sanctioned subclass is
+  `OptimizerTrainer`, which overrides only `create_optimizer` to build Muon — this
+  is mandatory, not stylistic: HF forbids a pre-built `optimizers=` tuple once FSDP
+  is enabled, and `optimizer_cls_and_kwargs` can't express the name-based
+  Muon/AdamW split. Don't override `training_step`/`compute_loss`/the loop, and
+  don't add other subclasses.
 - **Attention is SDPA + a manual fallback** in `ablm/model/attention.py`. Don't
   reintroduce a kernel registry / explicit flash-attn integration: SDPA already
   auto-selects the fused backend. (Keep attention in one file, not a subpackage —

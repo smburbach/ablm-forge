@@ -12,10 +12,10 @@ from __future__ import annotations
 import pytest
 import torch
 from datasets import load_dataset
-from transformers import DataCollatorForLanguageModeling, Trainer, TrainingArguments
+from transformers import DataCollatorForLanguageModeling, TrainingArguments
 
 from ablm import AblmConfig, AblmForMaskedLM, AblmTokenizerFast
-from ablm.training.optim import OptimizerSettings, build_muon_optimizer
+from ablm.training.optim import MUON_OPTIM, OptimizerTrainer
 
 pytestmark = pytest.mark.slow
 
@@ -35,7 +35,9 @@ def _stream_dataset(parquet):
     ).shuffle(seed=42, buffer_size=1024)
 
 
-def _build_trainer(parquet, output_dir, *, optimizer="adamw", max_steps=8, save_steps=4) -> Trainer:
+def _build_trainer(
+    parquet, output_dir, *, optimizer="adamw", max_steps=8, save_steps=4
+) -> OptimizerTrainer:
     model = AblmForMaskedLM(
         AblmConfig(
             hidden_size=32,
@@ -62,15 +64,12 @@ def _build_trainer(parquet, output_dir, *, optimizer="adamw", max_steps=8, save_
         dataloader_num_workers=0,
     )
     dataset = _stream_dataset(parquet)
-    optimizers = (None, None)
-    if optimizer == "muon":
-        optimizers = (build_muon_optimizer(model, OptimizerSettings(lr=1e-3)), None)
-    return Trainer(
+    return OptimizerTrainer(
         model=model,
         args=args,
         train_dataset=dataset,
         data_collator=DataCollatorForLanguageModeling(tokenizer=AblmTokenizerFast(), mlm=True),
-        optimizers=optimizers,
+        use_muon=optimizer == MUON_OPTIM,
     )
 
 
