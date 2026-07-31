@@ -21,6 +21,12 @@ not serialization: `torch.optim.Muon` runs Newton-Schulz on whatever tensor it i
 handed, so on a sharded 2D weight the orthogonalization is per-shard and only
 correct if DTensor redistributes it. Validate Muon on multiple GPUs before
 trusting it; AdamW is the safe FSDP default.
+
+Relative to ablm-sweeps' `esm2/12_sota_convergence/training_mods/optimizers.py`
+(same lineage): this module has no `DistributedMuon`, which shards Newton-Schulz
+across the DDP group. Measured there: stock Muon +13.3% runtime vs AdamW,
+DistributedMuon +9.5%, and the two are bit-identical (max|diff| = 0.0). Porting it
+is a pure ~3.5% throughput win and is deliberately out of scope here.
 """
 
 from __future__ import annotations
@@ -53,16 +59,20 @@ MUON_OPTIM = "muon"
 MUON_PARAM_PREFIX = "ablm.backbone.layers."
 
 
-def split_muon_params(model: nn.Module) -> tuple[list[nn.Parameter], list[nn.Parameter]]:
-    """Partition trainable params into ``(muon_params, adam_params)``.
+def split_muon_params(
+    model: nn.Module,
+) -> tuple[list[nn.Parameter], list[nn.Parameter], list[str]]:
+    """Partition trainable params into ``(muon_params, adam_params, adam_names)``.
 
     Muon gets the 2D transformer-body weights (name under `MUON_PARAM_PREFIX`);
-    everything else (embeddings, LM head, norms, biases) goes to AdamW. Asserts the
-    split is exhaustive and that no embedding / LM-head weight leaks into Muon, so a
-    module rename fails loudly.
+    everything else (embeddings, LM head, norms, biases) goes to AdamW. `adam_names`
+    is positionally aligned with `adam_params` so callers can apply HF's name-based
+    weight-decay rule. Asserts the split is exhaustive and that no embedding /
+    LM-head weight leaks into Muon, so a module rename fails loudly.
     """
     muon_params: list[nn.Parameter] = []
     adam_params: list[nn.Parameter] = []
+    adam_names: list[str] = []
     for name, p in model.named_parameters():
         if not p.requires_grad:
             continue
@@ -73,9 +83,10 @@ def split_muon_params(model: nn.Module) -> tuple[list[nn.Parameter], list[nn.Par
             muon_params.append(p)
         else:
             adam_params.append(p)
+            adam_names.append(name)
 
     assert muon_params, "Muon group is empty -- did the transformer-body module names change?"
-    return muon_params, adam_params
+    return muon_params, adam_params, adam_names
 
 
 class CombinedOptimizer(torch.optim.Optimizer):
@@ -169,42 +180,53 @@ def build_muon_optimizer(
     *,
     lr: float,
     weight_decay: float = 0.0,
-    betas: tuple[float, float] = (0.9, 0.98),
+    betas: tuple[float, float] = (0.9, 0.999),
     eps: float = 1e-8,
     momentum: float = 0.95,
     adjust_lr_fn: str | None = "match_rms_adamw",
+    muon_weight_decay: float | None = None,
+    decay_parameter_names: set[str] | None = None,
 ) -> CombinedOptimizer:
     """Build Muon (2D body weights) + AdamW (everything else) as one optimizer.
 
     `adjust_lr_fn="match_rms_adamw"` rescales the Muon update to AdamW's RMS
-    (Moonshot 2025), so AdamW's tuned `lr` / `weight_decay` transfer to Muon. AdamW
-    decays only the 2D weights (embeddings, LM head); norms and biases are excluded,
-    matching the HF/ESM convention. Requires torch >= 2.11 (`torch.optim.Muon`).
+    (Moonshot 2025), so AdamW's tuned `lr` / `weight_decay` transfer to Muon --
+    which is why `weight_decay` applies to BOTH children by default. Pass
+    `muon_weight_decay` to decouple them.
+
+    `decay_parameter_names` should be `Trainer.get_decay_parameter_names(model)`, so
+    the decay / no-decay split matches HF's convention exactly. When it is `None` the
+    fallback is `p.ndim >= 2`, which coincides for this architecture but is not the
+    same rule. `betas` / `eps` default to HF `TrainingArguments` defaults.
+
+    Requires torch >= 2.11 (`torch.optim.Muon`).
     """
     if not hasattr(torch.optim, "Muon"):
         raise RuntimeError("torch.optim.Muon is unavailable; 'muon' requires torch >= 2.11.")
 
-    muon_params, adam_params = split_muon_params(model)
-    decay = [p for p in adam_params if p.ndim >= 2]
-    no_decay = [p for p in adam_params if p.ndim < 2]
+    muon_params, adam_params, adam_names = split_muon_params(model)
+    if decay_parameter_names is None:
+        decay = [p for p in adam_params if p.ndim >= 2]
+        no_decay = [p for p in adam_params if p.ndim < 2]
+    else:
+        pairs = list(zip(adam_names, adam_params, strict=True))
+        decay = [p for n, p in pairs if n in decay_parameter_names]
+        no_decay = [p for n, p in pairs if n not in decay_parameter_names]
+
+    adamw_groups = [
+        {"params": decay, "weight_decay": weight_decay},
+        {"params": no_decay, "weight_decay": 0.0},
+    ]
     return CombinedOptimizer(
         [
             torch.optim.Muon(
                 muon_params,
                 lr=lr,
-                weight_decay=weight_decay,
+                weight_decay=weight_decay if muon_weight_decay is None else muon_weight_decay,
                 momentum=momentum,
                 adjust_lr_fn=adjust_lr_fn,
             ),
-            torch.optim.AdamW(
-                [
-                    {"params": decay, "weight_decay": weight_decay},
-                    {"params": no_decay, "weight_decay": 0.0},
-                ],
-                lr=lr,
-                betas=betas,
-                eps=eps,
-            ),
+            torch.optim.AdamW(adamw_groups, lr=lr, betas=betas, eps=eps),
         ]
     )
 
@@ -230,6 +252,11 @@ class OptimizerTrainer(Trainer):
         opt_model = model if model is not None else self.model
         assert opt_model is not None, "OptimizerTrainer.create_optimizer needs a model"
         self.optimizer = build_muon_optimizer(
-            opt_model, lr=self.args.learning_rate, weight_decay=self.args.weight_decay
+            opt_model,
+            lr=self.args.learning_rate,
+            weight_decay=self.args.weight_decay,
+            betas=(self.args.adam_beta1, self.args.adam_beta2),
+            eps=self.args.adam_epsilon,
+            decay_parameter_names=set(self.get_decay_parameter_names(opt_model)),
         )
         return self.optimizer

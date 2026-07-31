@@ -2,8 +2,8 @@
 
 Lab base model-architecture repo for antibody/protein language-model
 experiments. An ESM-style bidirectional encoder wired to the stock HuggingFace
-`Trainer`, launched via `torchrun` + FSDP2, with SDPA-based attention and an
-optional Muon optimizer.
+`Trainer`, launched via `torchrun` + FSDP2, with SDPA-based attention and Muon
+as the recommended production optimizer.
 
 It's a **library, not a framework**: no config system, CLI, or data module. You
 compose the building blocks (`AblmConfig`, a 🤗 `datasets` stream, a
@@ -71,8 +71,13 @@ Trainer(model=model, args=args, train_dataset=ds, data_collator=collator).train(
   Nothing to configure.
 - **Optimizer** — HF-native ones are `TrainingArguments(optim="adamw_torch" | …)`.
   Muon (2D-hidden Muon + AdamW for the rest) is built with
-  `ablm.training.optim.build_muon_optimizer(model, lr=..., weight_decay=...)` and
-  passed via `Trainer(..., optimizers=(opt, None))`. No `Trainer` subclass.
+  `ablm.training.optim.build_muon_optimizer` and wired in via `OptimizerTrainer(...,
+  use_muon=True)`.
+
+  Muon is the recommended optimizer for production runs: on a 350M AbLM it reached
+  lower eval loss than AdamW reproducibly (the largest single architectural effect
+  measured, -0.0058 eval/loss) and is LR-robust where AdamW degrades above ~1e-4.
+  AdamW remains the default for iteration and the safe choice under FSDP.
 - **LR schedule** — `TrainingArguments.lr_scheduler_type` (`linear`, `cosine`,
   `cosine_with_min_lr`, `warmup_stable_decay`, …).
 

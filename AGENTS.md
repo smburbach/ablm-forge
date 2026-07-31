@@ -2,10 +2,15 @@
 
 Lab base model-architecture repo for antibody/protein language-model
 experiments. An ESM-style bidirectional encoder wired to the stock HuggingFace
-`Trainer`, launched via `torchrun` + FSDP2, with SDPA-based attention and an
-optional Muon optimizer. It is a **library, not a framework**: no config system,
-no CLI — you compose the pieces in a training script (`scripts/pretrain.py` is
-the example).
+`Trainer`, launched via `torchrun` + FSDP2, with SDPA-based attention and Muon
+as the recommended production optimizer. It is a **library, not a framework**:
+no config system, no CLI — you compose the pieces in a training script
+(`scripts/pretrain.py` is the example).
+
+Muon is the recommended optimizer for production runs: on a 350M AbLM it reached
+lower eval loss than AdamW reproducibly (the largest single architectural effect
+measured, -0.0058 eval/loss) and is LR-robust where AdamW degrades above ~1e-4.
+AdamW remains the default for iteration and the safe choice under FSDP.
 
 This file is the single source of truth for agent and contributor instructions.
 Make all future updates here, not in `CLAUDE.md` (which points back to this file).
