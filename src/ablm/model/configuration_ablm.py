@@ -15,6 +15,8 @@ __all__ = ["AblmConfig"]
 _VALID_NORM_TYPES = ("layernorm", "rmsnorm")
 _VALID_NORM_STRATEGIES = ("pre", "sandwich", "hybrid", "post_sdpa")
 _VALID_RESIDUAL_SCALINGS = ("sqrt_num_layers", "none")
+# Must mirror ffn.py's _FFN_VARIANTS keys; guarded by
+# test_ffn_variant_registry_matches_config_allow_list.
 _VALID_FFN_ACTIVATIONS = ("swiglu", "geglu", "reglu", "gelu_mlp")
 _VALID_MLM_HEAD_ACTIVATIONS = ("gelu", "silu", "relu")
 _VALID_CLASSIFIER_POOLS = ("mean", "cls")

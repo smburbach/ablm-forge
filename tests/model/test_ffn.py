@@ -189,3 +189,12 @@ def test_mlp_output_shape_matches_input():
 def test_down_proj_is_marked_residual_writer_on_both_structures():
     assert make_ffn(_config(ffn_activation="swiglu")).down_proj._is_residual_writer is True
     assert make_ffn(_config(ffn_activation="gelu_mlp")).down_proj._is_residual_writer is True
+
+
+def test_ffn_variant_registry_matches_config_allow_list():
+    """`_FFN_VARIANTS` (ffn.py) and `_VALID_FFN_ACTIVATIONS` (configuration_ablm.py)
+    are independent hand-maintained sources of truth; guard against drift."""
+    from ablm.model.configuration_ablm import _VALID_FFN_ACTIVATIONS
+    from ablm.model.ffn import _FFN_VARIANTS
+
+    assert set(_FFN_VARIANTS) == set(_VALID_FFN_ACTIVATIONS)
