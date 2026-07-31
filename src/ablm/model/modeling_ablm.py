@@ -14,6 +14,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 from transformers import PreTrainedModel
+from transformers.activations import ACT2FN
 from transformers.modeling_outputs import (
     BaseModelOutput,
     MaskedLMOutput,
@@ -52,9 +53,6 @@ __all__ = [
     "AblmMLMHead",
     "EsmcCompatMixin",
 ]
-
-
-_MLM_HEAD_ACTIVATIONS = {"gelu": F.gelu, "silu": F.silu, "relu": F.relu}
 
 
 class AblmPreTrainedModel(PreTrainedModel):
@@ -284,7 +282,7 @@ class AblmMLMHead(nn.Module):
     def __init__(self, config: AblmConfig) -> None:
         super().__init__()
         self.dense = nn.Linear(config.hidden_size, config.hidden_size, bias=True)
-        self.act = _MLM_HEAD_ACTIVATIONS[config.mlm_head_activation]
+        self.act = ACT2FN[config.mlm_head_activation]
         self.norm = make_norm(
             config.norm_type,
             config.hidden_size,

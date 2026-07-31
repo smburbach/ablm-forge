@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import torch
 
+from ablm import AblmConfig, AblmForMaskedLM
 from ablm.model import LogitsConfig, LogitsOutput
 
 
@@ -57,3 +58,21 @@ def test_logits_output_preserves_tensor_identity():
     assert out.embeddings is hidden
     assert out.hidden_states[0] is hidden
     assert out.attentions[0] is attn
+
+
+def test_mlm_head_activation_is_an_nn_module():
+    m = AblmForMaskedLM(AblmConfig(hidden_size=16, num_attention_heads=2, num_hidden_layers=1))
+    assert isinstance(m.lm_head.act, torch.nn.Module)
+
+
+def test_mlm_head_activation_changes_the_logits():
+    ids = torch.randint(4, 30, (1, 12))
+    kw = dict(vocab_size=33, hidden_size=32, num_attention_heads=4, num_hidden_layers=2)
+    outs = {}
+    for act in ("gelu", "silu", "relu"):
+        torch.manual_seed(0)
+        model = AblmForMaskedLM(AblmConfig(**kw, mlm_head_activation=act)).eval()
+        with torch.no_grad():
+            outs[act] = model(input_ids=ids).logits
+    assert not torch.allclose(outs["gelu"], outs["silu"])
+    assert not torch.allclose(outs["gelu"], outs["relu"])
