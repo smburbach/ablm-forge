@@ -1,4 +1,4 @@
-"""Tests for `ablm.model.ffn` — SwiGLU, round_up_to, make_ffn."""
+"""Tests for `ablm.model.ffn` — GatedFFN, MLP, round_up_to, make_ffn."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import pytest
 import torch
 from torch.nn import functional as F
 
-from ablm.model.ffn import SwiGLU, make_ffn, round_up_to
+from ablm.model.ffn import MLP, GatedFFN, make_ffn, round_up_to
 
 
 def _config(
@@ -27,33 +27,33 @@ def _config(
 
 
 # ---------------------------------------------------------------------------
-# SwiGLU
+# GatedFFN (default activation="silu", i.e. swiglu)
 # ---------------------------------------------------------------------------
 
 
 def test_swiglu_output_shape_matches_input():
-    ffn = SwiGLU(hidden_size=16, intermediate_size=32)
+    ffn = GatedFFN(hidden_size=16, intermediate_size=32)
     x = torch.randn(2, 5, 16)
     out = ffn(x)
     assert out.shape == x.shape
 
 
 def test_swiglu_no_bias_by_default():
-    ffn = SwiGLU(hidden_size=8, intermediate_size=16)
+    ffn = GatedFFN(hidden_size=8, intermediate_size=16)
     assert ffn.gate_proj.bias is None
     assert ffn.up_proj.bias is None
     assert ffn.down_proj.bias is None
 
 
 def test_swiglu_with_bias():
-    ffn = SwiGLU(hidden_size=8, intermediate_size=16, bias=True)
+    ffn = GatedFFN(hidden_size=8, intermediate_size=16, bias=True)
     assert ffn.gate_proj.bias is not None
     assert ffn.up_proj.bias is not None
     assert ffn.down_proj.bias is not None
 
 
 def test_swiglu_linear_shapes():
-    ffn = SwiGLU(hidden_size=12, intermediate_size=24)
+    ffn = GatedFFN(hidden_size=12, intermediate_size=24)
     assert ffn.gate_proj.weight.shape == (24, 12)
     assert ffn.up_proj.weight.shape == (24, 12)
     assert ffn.down_proj.weight.shape == (12, 24)
@@ -61,14 +61,14 @@ def test_swiglu_linear_shapes():
 
 def test_swiglu_matches_reference_formula():
     """Forward must equal `down(silu(gate(x)) * up(x))` exactly."""
-    ffn = SwiGLU(hidden_size=8, intermediate_size=16)
+    ffn = GatedFFN(hidden_size=8, intermediate_size=16)
     x = torch.randn(3, 4, 8)
     expected = ffn.down_proj(F.silu(ffn.gate_proj(x)) * ffn.up_proj(x))
     assert torch.allclose(ffn(x), expected, atol=1e-6)
 
 
 def test_swiglu_grad_flows_through_all_three_linears():
-    ffn = SwiGLU(hidden_size=8, intermediate_size=16)
+    ffn = GatedFFN(hidden_size=8, intermediate_size=16)
     x = torch.randn(2, 3, 8, requires_grad=True)
     ffn(x).sum().backward()
     for proj in (ffn.gate_proj, ffn.up_proj, ffn.down_proj):
@@ -77,7 +77,7 @@ def test_swiglu_grad_flows_through_all_three_linears():
 
 
 def test_swiglu_grad_flows_to_input():
-    ffn = SwiGLU(hidden_size=8, intermediate_size=16)
+    ffn = GatedFFN(hidden_size=8, intermediate_size=16)
     x = torch.randn(2, 3, 8, requires_grad=True)
     ffn(x).sum().backward()
     assert x.grad is not None
@@ -117,12 +117,12 @@ def test_round_up_to_zero():
 
 def test_make_ffn_swiglu():
     ffn = make_ffn(_config(ffn_activation="swiglu"))
-    assert isinstance(ffn, SwiGLU)
+    assert isinstance(ffn, GatedFFN)
 
 
 def test_make_ffn_forwards_hidden_and_intermediate_size():
     ffn = make_ffn(_config(hidden_size=12, intermediate_size=24))
-    assert isinstance(ffn, SwiGLU)
+    assert isinstance(ffn, GatedFFN)
     assert ffn.hidden_size == 12
     assert ffn.intermediate_size == 24
     assert ffn.gate_proj.weight.shape == (24, 12)
@@ -138,3 +138,54 @@ def test_make_ffn_forwards_bias_setting():
 def test_make_ffn_unknown_activation_raises_value_error():
     with pytest.raises(ValueError, match="Unknown ffn_activation"):
         make_ffn(_config(ffn_activation="relu"))
+
+
+# ---------------------------------------------------------------------------
+# variants
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("variant", "expected_cls", "expected_act"),
+    [
+        ("swiglu", GatedFFN, None),  # ACT2FN["silu"] is HF's SiLUActivation, not torch.nn.SiLU
+        ("geglu", GatedFFN, None),  # ACT2FN["gelu"] is HF's GELUActivation
+        ("reglu", GatedFFN, torch.nn.ReLU),
+        ("gelu_mlp", MLP, None),
+    ],
+)
+def test_make_ffn_builds_each_variant(variant, expected_cls, expected_act):
+    ffn = make_ffn(_config(ffn_activation=variant))
+    assert isinstance(ffn, expected_cls)
+    if expected_act is not None:
+        assert isinstance(ffn.act, expected_act)
+
+
+def test_gated_variants_have_three_projections_mlp_has_two():
+    gated = make_ffn(_config(ffn_activation="swiglu"))
+    mlp = make_ffn(_config(ffn_activation="gelu_mlp"))
+    assert hasattr(gated, "gate_proj") and hasattr(gated, "up_proj") and hasattr(gated, "down_proj")
+    assert hasattr(mlp, "up_proj") and hasattr(mlp, "down_proj")
+    assert not hasattr(mlp, "gate_proj")
+
+
+def test_gate_activation_changes_the_output():
+    torch.manual_seed(0)
+    x = torch.randn(2, 4, 16)
+    outs = {}
+    for variant in ("swiglu", "geglu", "reglu"):
+        torch.manual_seed(0)
+        outs[variant] = make_ffn(_config(ffn_activation=variant))(x)
+    assert not torch.allclose(outs["swiglu"], outs["geglu"])
+    assert not torch.allclose(outs["swiglu"], outs["reglu"])
+
+
+def test_mlp_output_shape_matches_input():
+    mlp = MLP(hidden_size=16, intermediate_size=32)
+    x = torch.randn(2, 5, 16)
+    assert mlp(x).shape == x.shape
+
+
+def test_down_proj_is_marked_residual_writer_on_both_structures():
+    assert make_ffn(_config(ffn_activation="swiglu")).down_proj._is_residual_writer is True
+    assert make_ffn(_config(ffn_activation="gelu_mlp")).down_proj._is_residual_writer is True

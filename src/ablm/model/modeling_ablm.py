@@ -31,14 +31,14 @@ from transformers.modeling_outputs import (
 from .attention import AblmAttention
 from .configuration_ablm import AblmConfig
 from .embedding import cls_pool, mean_pool
-from .ffn import SwiGLU
+from .ffn import GatedFFN
 from .masking import prepare_attention_mask
 from .norm import AblmLayerNorm, AblmRMSNorm, make_norm
 from .outputs import LogitsConfig, LogitsOutput
 from .rope import RotaryEmbedding
 from .transformer import AblmBlock, AblmStack
 
-_REMOTE_CODE_DEPS = (AblmAttention, SwiGLU, prepare_attention_mask, RotaryEmbedding)
+_REMOTE_CODE_DEPS = (AblmAttention, GatedFFN, prepare_attention_mask, RotaryEmbedding)
 
 if TYPE_CHECKING:
     from transformers.tokenization_utils_base import BatchEncoding, PreTrainedTokenizerBase

@@ -4,8 +4,9 @@ ABLM is an encoder-only protein language model built on a configurable
 pre-norm transformer backbone. A single :class:`AblmConfig` selects every
 architectural variant — norm operator (LayerNorm / RMSNorm), norm placement
 strategy (pre / sandwich / hybrid / post-SDPA), full vs. partial RoPE, optional
-QK-norm, SwiGLU feed-forward, and sqrt-depth residual scaling — so the same code
-path covers the whole design space. Attention runs through PyTorch's
+QK-norm, gated or non-gated feed-forward (swiglu / geglu / reglu / gelu_mlp), and
+sqrt-depth residual scaling — so the same code path covers the whole design
+space. Attention runs through PyTorch's
 ``scaled_dot_product_attention`` — a fused FlashAttention / memory-efficient
 kernel on CUDA, the math backend on CPU. The package exposes the backbone
 (:class:`AblmModel`) and the task heads (:class:`AblmForMaskedLM`,
@@ -22,7 +23,7 @@ from __future__ import annotations
 from .attention import AblmAttention
 from .configuration_ablm import AblmConfig
 from .embedding import AblmEmbedding, cls_pool, mean_pool
-from .ffn import SwiGLU, make_ffn, round_up_to
+from .ffn import MLP, GatedFFN, make_ffn, round_up_to
 from .modeling_ablm import (
     AblmForMaskedLM,
     AblmForSequenceClassification,
@@ -52,7 +53,8 @@ __all__ = [
     "AblmPreTrainedModel",
     "AblmStack",
     "AblmTokenizerFast",
-    "SwiGLU",
+    "GatedFFN",
+    "MLP",
     "cls_pool",
     "make_ffn",
     "mean_pool",

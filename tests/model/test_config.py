@@ -220,3 +220,17 @@ def test_save_pretrained_writes_token_ids(tmp_path: Path):
     assert on_disk["pad_token_id"] == 1
     assert on_disk["bos_token_id"] == 0
     assert on_disk["eos_token_id"] == 2
+
+
+def test_intermediate_size_derivation_is_variant_aware():
+    # Gated (3 matrices): ~8/3 * D keeps params matched to a 4x non-gated MLP.
+    gated = AblmConfig(hidden_size=960, num_attention_heads=15, ffn_activation="swiglu")
+    assert gated.intermediate_size == 2560
+    # Non-gated (2 matrices): the classic 4x expansion.
+    mlp = AblmConfig(hidden_size=960, num_attention_heads=15, ffn_activation="gelu_mlp")
+    assert mlp.intermediate_size == 3840
+
+
+def test_unknown_ffn_activation_raises_at_config_construction():
+    with pytest.raises(ValueError, match="ffn_activation must be one of"):
+        AblmConfig(ffn_activation="not_a_variant")

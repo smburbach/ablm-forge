@@ -15,7 +15,7 @@ __all__ = ["AblmConfig"]
 _VALID_NORM_TYPES = ("layernorm", "rmsnorm")
 _VALID_NORM_STRATEGIES = ("pre", "sandwich", "hybrid", "post_sdpa")
 _VALID_RESIDUAL_SCALINGS = ("sqrt_num_layers", "none")
-_VALID_FFN_ACTIVATIONS = ("swiglu",)
+_VALID_FFN_ACTIVATIONS = ("swiglu", "geglu", "reglu", "gelu_mlp")
 _VALID_MLM_HEAD_ACTIVATIONS = ("gelu", "silu", "relu")
 _VALID_CLASSIFIER_POOLS = ("mean", "cls")
 
@@ -140,8 +140,12 @@ class AblmConfig(PretrainedConfig):
             self.head_dim = self.hidden_size // self.num_attention_heads
 
         if self.intermediate_size is None:
-            # SwiGLU convention: ~8/3 * D rounded up to a tensor-core friendly 256.
-            self.intermediate_size = round_up_to(int(8 * self.hidden_size / 3), 256)
+            if self.ffn_activation == "gelu_mlp":
+                # Non-gated MLP (2 matrices): the classic 4x expansion.
+                self.intermediate_size = round_up_to(4 * self.hidden_size, 256)
+            else:
+                # Gated (3 matrices): ~8/3 * D keeps params matched to a 4x MLP.
+                self.intermediate_size = round_up_to(int(8 * self.hidden_size / 3), 256)
 
         if self.rope_dim is None:
             # Default to full RoPE on every head channel.

@@ -43,8 +43,12 @@ tokenizer is bit-for-bit ESM-C (33-token vocab). Tests
 `tests/model/test_esm_alignment.py` pin this alignment — keep them green when
 touching defaults. The architecture is a superset: `qk_norm`, `residual_scaling`,
 `norm_strategy`, partial RoPE, `token_dropout`, and `attention_bias` are opt-in
-knobs for experiments. (Exact ESM-2 parity would additionally need a plain GELU
-MLP FFN, which is not yet implemented — only SwiGLU is.)
+knobs for experiments. FFN variants are `swiglu` / `geglu` / `reglu` (gated, 3
+matrices, gate activation from `ACT2FN`) and `gelu_mlp` (non-gated, 2 matrices,
+ESM-2 style). Add a gated variant by registering it in `_FFN_VARIANTS` in
+`ffn.py` — no new class needed. When `intermediate_size` is left `None` the
+derivation is variant-aware: 4x hidden for `gelu_mlp`, ~8/3 x hidden for the
+gated variants.
 
 > Attention is just `F.scaled_dot_product_attention`, which auto-selects the
 > fastest fused backend (FlashAttention / cuDNN / mem-efficient) at runtime — no
