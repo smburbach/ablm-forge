@@ -8,6 +8,7 @@ import pytest
 import torch
 from torch import nn
 
+from ablm import AblmConfig, AblmForMaskedLM
 from ablm.model.attention import AblmAttention
 from ablm.model.norm import AblmLayerNorm, AblmRMSNorm
 
@@ -23,6 +24,7 @@ def _config(
     norm_type: str = "layernorm",
     norm_eps: float = 1e-6,
     qk_norm: bool = True,
+    attention_bias: bool = False,
     attention_dropout: float = 0.0,
     hidden_dropout: float = 0.0,
     norm_strategy: str = "pre",
@@ -39,6 +41,7 @@ def _config(
         norm_type=norm_type,
         norm_eps=norm_eps,
         qk_norm=qk_norm,
+        attention_bias=attention_bias,
         attention_dropout=attention_dropout,
         hidden_dropout=hidden_dropout,
         norm_strategy=norm_strategy,
@@ -286,3 +289,40 @@ def test_sdpa_and_manual_paths_agree():
     assert w_sdpa is None
     assert w_manual is not None
     assert torch.allclose(out_sdpa, out_manual, rtol=1e-4, atol=1e-5)
+
+
+# ---------------------------------------------------------------------------
+# attention_bias
+# ---------------------------------------------------------------------------
+
+
+def test_attention_projections_are_bias_free_by_default():
+    cfg = AblmConfig(hidden_size=16, num_attention_heads=2, num_hidden_layers=1)
+    attn = AblmAttention(cfg)
+    for proj in (attn.q_proj, attn.k_proj, attn.v_proj, attn.o_proj):
+        assert proj.bias is None
+
+
+def test_attention_bias_true_adds_bias_to_all_four_projections():
+    cfg = AblmConfig(
+        hidden_size=16, num_attention_heads=2, num_hidden_layers=1, attention_bias=True
+    )
+    attn = AblmAttention(cfg)
+    for proj in (attn.q_proj, attn.k_proj, attn.v_proj, attn.o_proj):
+        assert proj.bias is not None
+        assert proj.bias.shape == (16,)
+
+
+def test_attention_bias_param_delta_is_four_vectors_per_layer():
+    kw = dict(
+        vocab_size=33,
+        hidden_size=32,
+        num_hidden_layers=3,
+        num_attention_heads=4,
+        intermediate_size=64,
+    )
+    off = AblmForMaskedLM(AblmConfig(**kw, attention_bias=False))
+    on = AblmForMaskedLM(AblmConfig(**kw, attention_bias=True))
+    n_off = sum(p.numel() for p in off.parameters())
+    n_on = sum(p.numel() for p in on.parameters())
+    assert n_on - n_off == 4 * 32 * 3

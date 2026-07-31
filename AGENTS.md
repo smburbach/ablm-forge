@@ -34,15 +34,15 @@ ty check src/                          # ty (Astral), not mypy; must be clean
 
 The default config tracks **ESM-C** (EvolutionaryScale Cambrian): Pre-LN, full
 RoPE, SwiGLU, **bias-free** linear layers and layer norms (`norm_bias=false`,
-`ffn_bias=false`), **no QK-norm**, **no residual scaling**, and **no token
-dropout** (`token_dropout=false` — ESM-2 had it; ESM-C removed it as redundant
-under Pre-LN. The ESM-2 behavior is implemented and available via
-`token_dropout=true`). ESM-C sizes are head_dim-64 at 30L/960, 36L/1152,
-80L/2560 (300M / 600M / 6B) — set them directly on `AblmConfig`. The tokenizer is
-bit-for-bit ESM-C (33-token vocab). Tests `tests/model/test_esm_alignment.py` pin
-this alignment — keep them green when touching defaults. The architecture is a
-superset: `qk_norm`,
-`residual_scaling`, `norm_strategy`, partial RoPE, and `token_dropout` are opt-in
+`ffn_bias=false`, `attention_bias=false`), **no QK-norm**, **no residual
+scaling**, and **no token dropout** (`token_dropout=false` — ESM-2 had it; ESM-C
+removed it as redundant under Pre-LN. The ESM-2 behavior is implemented and
+available via `token_dropout=true`). ESM-C sizes are head_dim-64 at 30L/960,
+36L/1152, 80L/2560 (300M / 600M / 6B) — set them directly on `AblmConfig`. The
+tokenizer is bit-for-bit ESM-C (33-token vocab). Tests
+`tests/model/test_esm_alignment.py` pin this alignment — keep them green when
+touching defaults. The architecture is a superset: `qk_norm`, `residual_scaling`,
+`norm_strategy`, partial RoPE, `token_dropout`, and `attention_bias` are opt-in
 knobs for experiments. (Exact ESM-2 parity would additionally need a plain GELU
 MLP FFN, which is not yet implemented — only SwiGLU is.)
 

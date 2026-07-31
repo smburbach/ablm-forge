@@ -13,11 +13,12 @@ training script. `scripts/pretrain.py` is a complete, copy-and-edit example.
 ## Reference architecture
 
 Defaults track **ESM-C** (EvolutionaryScale Cambrian): Pre-LN, full RoPE,
-SwiGLU, bias-free linear layers + layer norms, no QK-norm, no residual scaling,
+SwiGLU, **bias-free** linear layers and layer norms (`norm_bias=false`,
+`ffn_bias=false`, `attention_bias=false`), no QK-norm, no residual scaling,
 no token dropout, and the bit-for-bit ESM-C 33-token tokenizer. Everything beyond
-ESM-C (`qk_norm`, `residual_scaling`, `norm_strategy`, partial RoPE, ESM-2-style
-`token_dropout`) is an opt-in `AblmConfig` knob. ESM-C sizes are head_dim-64 at
-30L/960, 36L/1152, 80L/2560 (300M / 600M / 6B).
+ESM-C (`qk_norm`, `residual_scaling`, `norm_strategy`, partial RoPE,
+`token_dropout`, `attention_bias`) is an opt-in `AblmConfig` knob. ESM-C sizes
+are head_dim-64 at 30L/960, 36L/1152, 80L/2560 (300M / 600M / 6B).
 
 ## Install
 

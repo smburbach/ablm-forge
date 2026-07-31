@@ -65,10 +65,12 @@ class AblmAttention(nn.Module):
         self.attention_dropout = float(config.attention_dropout)
         self.hidden_dropout = float(config.hidden_dropout)
 
-        self.q_proj = nn.Linear(hidden_size, hidden_size, bias=False)
-        self.k_proj = nn.Linear(hidden_size, hidden_size, bias=False)
-        self.v_proj = nn.Linear(hidden_size, hidden_size, bias=False)
-        self.o_proj = nn.Linear(hidden_size, hidden_size, bias=False)
+        # ESM-C is bias-free; ESM-2 has biases on all four projections.
+        attn_bias = bool(config.attention_bias)
+        self.q_proj = nn.Linear(hidden_size, hidden_size, bias=attn_bias)
+        self.k_proj = nn.Linear(hidden_size, hidden_size, bias=attn_bias)
+        self.v_proj = nn.Linear(hidden_size, hidden_size, bias=attn_bias)
+        self.o_proj = nn.Linear(hidden_size, hidden_size, bias=attn_bias)
         # Picked up by AblmPreTrainedModel._init_weights for the 1/sqrt(2L) scaling.
         self.o_proj._is_residual_writer = True  # ty: ignore[unresolved-attribute]  # nn.Module setattr
 

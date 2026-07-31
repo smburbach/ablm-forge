@@ -56,6 +56,7 @@ class AblmConfig(PretrainedConfig):
         ffn_activation: str = "swiglu",
         ffn_bias: bool = False,
         token_dropout: bool = False,
+        attention_bias: bool = False,
         attention_dropout: float = 0.0,
         hidden_dropout: float = 0.0,
         tie_word_embeddings: bool = False,
@@ -96,6 +97,7 @@ class AblmConfig(PretrainedConfig):
         self.ffn_activation = ffn_activation
         self.ffn_bias = bool(ffn_bias)
         self.token_dropout = bool(token_dropout)
+        self.attention_bias = bool(attention_bias)
         self.attention_dropout = float(attention_dropout)
         self.hidden_dropout = float(hidden_dropout)
         self.mlm_head_activation = mlm_head_activation

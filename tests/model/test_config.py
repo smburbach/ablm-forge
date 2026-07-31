@@ -38,6 +38,7 @@ def test_defaults_match_architecture_spec():
     assert cfg.ffn_activation == "swiglu"
     assert cfg.ffn_bias is False
     assert cfg.token_dropout is False  # ESM-C removed token dropout
+    assert cfg.attention_bias is False
     assert cfg.attention_dropout == 0.0
     assert cfg.hidden_dropout == 0.0
     assert cfg.tie_word_embeddings is False
