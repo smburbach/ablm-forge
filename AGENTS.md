@@ -50,8 +50,11 @@ touching defaults. The architecture is a superset: `qk_norm`, `residual_scaling`
 `norm_strategy`, partial RoPE, `token_dropout`, and `attention_bias` are opt-in
 knobs for experiments. FFN variants are `swiglu` / `geglu` / `reglu` (gated, 3
 matrices, gate activation from `ACT2FN`) and `gelu_mlp` (non-gated, 2 matrices,
-ESM-2 style). Add a gated variant by registering it in `_FFN_VARIANTS` in
-`ffn.py` — no new class needed. When `intermediate_size` is left `None` the
+ESM-2 style). Add a gated variant by adding a `FfnActivation` member
+(`config_types.py`) and a `_FFN_VARIANTS` entry in `ffn.py` — no new class needed.
+The categorical config fields (norm/ffn/pool/etc.) are `StrEnum`s in
+`config_types.py`; `AblmConfig` validates by coercing through them, so there's no
+allow-list to keep in sync. When `intermediate_size` is left `None` the
 derivation is variant-aware: 4x hidden for `gelu_mlp`, ~8/3 x hidden for the
 gated variants.
 
