@@ -74,6 +74,9 @@ class AblmConfig(PretrainedConfig):
         eos_token_id: int = 2,
         unk_token_id: int = 3,
         mask_token_id: int = 32,
+        mup_enabled: bool = False,
+        mup_base_hidden_size: int | None = None,
+        mup_emb_mult: float = 1.0,
         **kwargs: Any,
     ) -> None:
         self.vocab_size = int(vocab_size)
@@ -113,6 +116,11 @@ class AblmConfig(PretrainedConfig):
         self.gradient_checkpointing = bool(gradient_checkpointing)
         self.unk_token_id = int(unk_token_id)
         self.mask_token_id = int(mask_token_id)
+        self.mup_enabled = bool(mup_enabled)
+        self.mup_base_hidden_size = (
+            mup_base_hidden_size if mup_base_hidden_size is None else int(mup_base_hidden_size)
+        )
+        self.mup_emb_mult = float(mup_emb_mult)
 
         self._resolve_derived_fields()
         self._validate()
@@ -129,6 +137,9 @@ class AblmConfig(PretrainedConfig):
             tie_word_embeddings=tie_word_embeddings,
             **kwargs,
         )
+
+        if self.mup_enabled and self.tie_word_embeddings:
+            raise ValueError("mup_enabled requires untied embeddings (tie_word_embeddings=False).")
 
     # ------------------------------------------------------------------
     # Derived-field resolution
@@ -153,6 +164,14 @@ class AblmConfig(PretrainedConfig):
             # Default to full RoPE on every head channel.
             self.rope_dim = self.head_dim
             self.nope_dim = 0
+
+        if self.mup_enabled and self.mup_base_hidden_size:
+            ratio = self.mup_base_hidden_size / self.hidden_size
+            self.mup_output_mult = ratio
+            self.mup_readout_lr_mult = ratio
+        else:
+            self.mup_output_mult = 1.0
+            self.mup_readout_lr_mult = 1.0
 
     # ------------------------------------------------------------------
     # Validation
@@ -225,3 +244,8 @@ class AblmConfig(PretrainedConfig):
                 UserWarning,
                 stacklevel=3,
             )
+
+        if self.mup_enabled and (
+            self.mup_base_hidden_size is None or self.mup_base_hidden_size <= 0
+        ):
+            raise ValueError("mup_enabled requires mup_base_hidden_size > 0.")
