@@ -26,8 +26,9 @@ def _hidden_rms(hidden: int, *, mup: bool) -> float:
     ids = torch.randint(4, 33, (4, 32))
     mask = torch.ones(4, 32, dtype=torch.long)
     with torch.no_grad():
-        out = model.ablm(input_ids=ids, attention_mask=mask)
-    return out.last_hidden_state.float().pow(2).mean().sqrt().item()
+        out = model.ablm(input_ids=ids, attention_mask=mask, output_hidden_states=True)
+    h = out.hidden_states[-1]  # last block output, before final_norm
+    return h.float().pow(2).mean().sqrt().item()
 
 
 @pytest.mark.slow
