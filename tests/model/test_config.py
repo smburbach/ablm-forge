@@ -146,11 +146,6 @@ def test_rejects_negative_rope_dim():
 # test_ffn.py (make_ffn), and test_transformer.py (the AblmBlock norm dispatch).
 
 
-def test_non_default_vocab_emits_warning():
-    with pytest.warns(UserWarning, match="custom vocabularies are not yet supported"):
-        AblmConfig(vocab_size=64)
-
-
 # ---------------------------------------------------------------------------
 # Pass-through / forward-compat with PretrainedConfig kwargs
 # ---------------------------------------------------------------------------

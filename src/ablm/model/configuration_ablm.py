@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import warnings
 from typing import Any, Literal
 
 from transformers import PretrainedConfig
@@ -10,9 +9,6 @@ from transformers import PretrainedConfig
 from .layers.ffn import round_up_to
 
 __all__ = ["AblmConfig"]
-
-
-_DEFAULT_VOCAB_SIZE = 33
 
 
 class AblmConfig(PretrainedConfig):
@@ -30,7 +26,7 @@ class AblmConfig(PretrainedConfig):
     def __init__(
         self,
         *,
-        vocab_size: int = _DEFAULT_VOCAB_SIZE,
+        vocab_size: int = 33,
         hidden_size: int = 768,
         num_hidden_layers: int = 12,
         num_attention_heads: int = 12,
@@ -206,14 +202,6 @@ class AblmConfig(PretrainedConfig):
         # ffn_activation, mlm_head_activation, classifier_pool) are Literal-typed and
         # validated at the point of use (make_norm / make_ffn / the AblmBlock norm
         # dispatch raise on an unknown value), not here.
-
-        if self.vocab_size != _DEFAULT_VOCAB_SIZE:
-            warnings.warn(
-                f"vocab_size={self.vocab_size} differs from the ABLM default "
-                f"({_DEFAULT_VOCAB_SIZE}); custom vocabularies are not yet supported.",
-                UserWarning,
-                stacklevel=3,
-            )
 
         if self.mup_enabled and (
             self.mup_base_hidden_size is None or self.mup_base_hidden_size <= 0
