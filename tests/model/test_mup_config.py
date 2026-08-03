@@ -11,7 +11,7 @@ def test_mup_disabled_by_default_multipliers_are_identity():
     cfg = AblmConfig(hidden_size=512, num_attention_heads=8)
     assert cfg.mup_enabled is False
     assert cfg.mup_output_mult == 1.0
-    assert cfg.mup_readout_lr_mult == 1.0
+    assert cfg.mup_adamw_lr_mult == 1.0
     assert cfg.mup_emb_mult == 1.0
 
 
@@ -23,7 +23,7 @@ def test_mup_multipliers_derive_from_base_over_width():
         mup_base_hidden_size=512,
     )
     assert cfg.mup_output_mult == pytest.approx(512 / 1024)
-    assert cfg.mup_readout_lr_mult == pytest.approx(512 / 1024)
+    assert cfg.mup_adamw_lr_mult == pytest.approx(512 / 1024)
 
 
 def test_mup_enabled_requires_base_hidden_size():

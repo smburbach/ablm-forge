@@ -168,10 +168,12 @@ class AblmConfig(PretrainedConfig):
         if self.mup_enabled and self.mup_base_hidden_size:
             ratio = self.mup_base_hidden_size / self.hidden_size
             self.mup_output_mult = ratio
-            self.mup_readout_lr_mult = ratio
+            # Scales every hidden AdamW 2D weight (readout, MLM-head dense, classifier)
+            # except the input embedding -- see `build_muon_optimizer`.
+            self.mup_adamw_lr_mult = ratio
         else:
             self.mup_output_mult = 1.0
-            self.mup_readout_lr_mult = 1.0
+            self.mup_adamw_lr_mult = 1.0
 
     # ------------------------------------------------------------------
     # Validation

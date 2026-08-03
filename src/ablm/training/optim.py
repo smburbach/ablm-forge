@@ -214,22 +214,28 @@ def build_muon_optimizer(
         no_decay = [p for n, p in pairs if n not in decay_parameter_names]
 
     cfg = getattr(model, "config", None)
-    readout_group = None
+    mup_group = None
     if cfg is not None and getattr(cfg, "mup_enabled", False):
-        readout = model.get_output_embeddings().weight
-        decay = [p for p in decay if p is not readout]
-        readout_group = {
-            "params": [readout],
+        # muP: every hidden AdamW 2D weight (readout, MLM-head dense, classifier, ...)
+        # has fan_in proportional to width and needs Adam LR ~ 1/d, scaled here by
+        # `d0/d` (`mup_adamw_lr_mult`). The input embedding is Theta(1) LR and is
+        # excluded. `get_input_embeddings` (not `get_output_embeddings`, which is
+        # `None` on classification/token heads) exists on every Ablm* head.
+        input_emb = model.get_input_embeddings().weight
+        mup_params = [p for p in decay if p.ndim == 2 and p is not input_emb]
+        decay = [p for p in decay if not (p.ndim == 2 and p is not input_emb)]
+        mup_group = {
+            "params": mup_params,
             "weight_decay": weight_decay,
-            "lr": lr * cfg.mup_readout_lr_mult,
+            "lr": lr * cfg.mup_adamw_lr_mult,
         }
 
     adamw_groups = [
         {"params": decay, "weight_decay": weight_decay},
         {"params": no_decay, "weight_decay": 0.0},
     ]
-    if readout_group is not None:
-        adamw_groups.append(readout_group)
+    if mup_group is not None:
+        adamw_groups.append(mup_group)
     return CombinedOptimizer(
         [
             torch.optim.Muon(
