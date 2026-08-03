@@ -12,12 +12,14 @@ from transformers import (
 )
 
 from .model import (
+    PRESETS,
     AblmConfig,
     AblmForMaskedLM,
     AblmForSequenceClassification,
     AblmForTokenClassification,
     AblmModel,
     AblmTokenizerFast,
+    from_preset,
 )
 
 __version__ = "0.0.1"
@@ -38,6 +40,7 @@ AutoModelForTokenClassification.register(AblmConfig, AblmForTokenClassification,
 AutoTokenizer.register(AblmConfig, fast_tokenizer_class=AblmTokenizerFast, exist_ok=True)
 
 __all__ = [
+    "PRESETS",
     "AblmConfig",
     "AblmForMaskedLM",
     "AblmForSequenceClassification",
@@ -45,4 +48,5 @@ __all__ = [
     "AblmModel",
     "AblmTokenizerFast",
     "__version__",
+    "from_preset",
 ]

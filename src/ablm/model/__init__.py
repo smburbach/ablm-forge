@@ -39,6 +39,7 @@ from .modeling_ablm import (
     AblmModel,
     AblmPreTrainedModel,
 )
+from .presets import PRESETS, from_preset
 from .tokenization_ablm import AblmTokenizerFast
 
 __all__ = [
@@ -56,7 +57,9 @@ __all__ = [
     "AblmTokenizerFast",
     "GatedFFN",
     "MLP",
+    "PRESETS",
     "cls_pool",
+    "from_preset",
     "make_ffn",
     "mean_pool",
     "round_up_to",

@@ -60,6 +60,11 @@ gated variants.
 > kernel registry, no torch.compile needed. A manual fp32-softmax path runs only
 > for `output_attentions=True` (SDPA can't return weights).
 
+- **Default presets** live in `model/presets.py` (`from_preset("300m")`,
+  `AblmConfig.from_preset(...)`): a muP-correct, kernel-optimized ladder
+  (35m/150m/300m/600m/6b, d0=512). muP is opt-in (`mup_enabled`), so non-preset
+  configs are unaffected.
+
 ## Core design rules (do not violate)
 
 - **No config system, no CLI.** Configuration lives in Python: `AblmConfig`

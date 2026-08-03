@@ -249,3 +249,14 @@ class AblmConfig(PretrainedConfig):
             self.mup_base_hidden_size is None or self.mup_base_hidden_size <= 0
         ):
             raise ValueError("mup_enabled requires mup_base_hidden_size > 0.")
+
+    # ------------------------------------------------------------------
+    # Presets
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def from_preset(cls, name: str, **overrides) -> AblmConfig:
+        """Return the named default preset (see :mod:`ablm.model.presets`)."""
+        from .presets import from_preset
+
+        return from_preset(name, **overrides)
