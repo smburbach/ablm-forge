@@ -49,14 +49,14 @@ tokenizer is bit-for-bit ESM-C (33-token vocab). Tests
 touching defaults. The architecture is a superset: `qk_norm`, `residual_scaling`,
 `norm_strategy`, partial RoPE, `token_dropout`, and `attention_bias` are opt-in
 knobs for experiments. FFN variants are `swiglu` / `geglu` / `reglu` (gated, 3
-matrices, gate activation from `ACT2FN`) and `gelu_mlp` (non-gated, 2 matrices,
+matrices, gate activation from `ACT2FN`) and `gelu` (non-gated, 2 matrices,
 ESM-2 style). Add a gated variant by adding a `_FFN_VARIANTS` entry in `ffn.py`
 (the runtime source of truth, checked by `make_ffn`) plus a value in `AblmConfig`'s
 `ffn_activation` `Literal` — no new class needed. The categorical config fields
 (norm/ffn/pool/etc.) are `Literal`-typed on `AblmConfig` and validated where they're
 consumed (`make_norm`, `make_ffn`, the `AblmBlock` norm dispatch) — no separate
 upfront allow-list. When `intermediate_size` is left `None` the
-derivation is variant-aware: 4x hidden for `gelu_mlp`, ~8/3 x hidden for the
+derivation is variant-aware: 4x hidden for `gelu`, ~8/3 x hidden for the
 gated variants.
 
 > Attention is just `F.scaled_dot_product_attention`, which auto-selects the

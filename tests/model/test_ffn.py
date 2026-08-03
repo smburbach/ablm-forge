@@ -151,7 +151,7 @@ def test_make_ffn_unknown_activation_raises_value_error():
         ("swiglu", GatedFFN, None),  # ACT2FN["silu"] is HF's SiLUActivation, not torch.nn.SiLU
         ("geglu", GatedFFN, None),  # ACT2FN["gelu"] is HF's GELUActivation
         ("reglu", GatedFFN, torch.nn.ReLU),
-        ("gelu_mlp", MLP, None),
+        ("gelu", MLP, None),
     ],
 )
 def test_make_ffn_builds_each_variant(variant, expected_cls, expected_act):
@@ -163,7 +163,7 @@ def test_make_ffn_builds_each_variant(variant, expected_cls, expected_act):
 
 def test_gated_variants_have_three_projections_mlp_has_two():
     gated = make_ffn(_config(ffn_activation="swiglu"))
-    mlp = make_ffn(_config(ffn_activation="gelu_mlp"))
+    mlp = make_ffn(_config(ffn_activation="gelu"))
     assert hasattr(gated, "gate_proj") and hasattr(gated, "up_proj") and hasattr(gated, "down_proj")
     assert hasattr(mlp, "up_proj") and hasattr(mlp, "down_proj")
     assert not hasattr(mlp, "gate_proj")
@@ -188,7 +188,7 @@ def test_mlp_output_shape_matches_input():
 
 def test_down_proj_is_marked_residual_writer_on_both_structures():
     assert make_ffn(_config(ffn_activation="swiglu")).down_proj._is_residual_writer is True
-    assert make_ffn(_config(ffn_activation="gelu_mlp")).down_proj._is_residual_writer is True
+    assert make_ffn(_config(ffn_activation="gelu")).down_proj._is_residual_writer is True
 
 
 def test_make_ffn_rejects_unknown_activation():

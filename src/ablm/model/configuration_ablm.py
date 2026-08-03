@@ -48,7 +48,7 @@ class AblmConfig(PretrainedConfig):
         post_embed_norm: bool = False,
         residual_scaling: Literal["sqrt_num_layers", "none"] = "none",
         init_scale_output_projections: bool = True,
-        ffn_activation: Literal["swiglu", "geglu", "reglu", "gelu_mlp"] = "swiglu",
+        ffn_activation: Literal["swiglu", "geglu", "reglu", "gelu"] = "swiglu",
         ffn_bias: bool = False,
         token_dropout: bool = False,
         attention_bias: bool = False,
@@ -146,7 +146,7 @@ class AblmConfig(PretrainedConfig):
             self.head_dim = self.hidden_size // self.num_attention_heads
 
         if self.intermediate_size is None:
-            if self.ffn_activation == "gelu_mlp":
+            if self.ffn_activation == "gelu":
                 # Non-gated MLP (2 matrices): the classic 4x expansion.
                 self.intermediate_size = round_up_to(4 * self.hidden_size, 256)
             else:

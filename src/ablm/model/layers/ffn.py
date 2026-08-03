@@ -22,7 +22,7 @@ _FFN_VARIANTS: dict[str, tuple[str, str]] = {
     "swiglu": ("gated", "silu"),
     "geglu": ("gated", "gelu"),
     "reglu": ("gated", "relu"),
-    "gelu_mlp": ("mlp", "gelu"),
+    "gelu": ("mlp", "gelu"),
 }
 
 

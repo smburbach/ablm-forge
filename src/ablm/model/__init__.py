@@ -4,7 +4,7 @@ ABLM is an encoder-only protein language model built on a configurable
 pre-norm transformer backbone. A single :class:`AblmConfig` selects every
 architectural variant — norm operator (LayerNorm / RMSNorm), norm placement
 strategy (pre / sandwich / hybrid / post-SDPA), full vs. partial RoPE, optional
-QK-norm, gated or non-gated feed-forward (swiglu / geglu / reglu / gelu_mlp), and
+QK-norm, gated or non-gated feed-forward (swiglu / geglu / reglu / gelu), and
 sqrt-depth residual scaling — so the same code path covers the whole design
 space. Attention runs through PyTorch's ``scaled_dot_product_attention`` — a
 fused FlashAttention / memory-efficient kernel on CUDA, the math backend on CPU.

@@ -19,7 +19,7 @@ no token dropout, and the bit-for-bit ESM-C 33-token tokenizer. Everything beyon
 ESM-C (`qk_norm`, `residual_scaling`, `norm_strategy`, partial RoPE,
 `token_dropout`, `attention_bias`) is an opt-in `AblmConfig` knob. ESM-C sizes
 are head_dim-64 at 30L/960, 36L/1152, 80L/2560 (300M / 600M / 6B). FFN variants
-are `swiglu` / `geglu` / `reglu` (gated) and `gelu_mlp` (non-gated, ESM-2 style),
+are `swiglu` / `geglu` / `reglu` (gated) and `gelu` (non-gated, ESM-2 style),
 selected via `ffn_activation`.
 
 ## Install

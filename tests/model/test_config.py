@@ -216,7 +216,7 @@ def test_intermediate_size_derivation_is_variant_aware():
     gated = AblmConfig(hidden_size=960, num_attention_heads=15, ffn_activation="swiglu")
     assert gated.intermediate_size == 2560
     # Non-gated (2 matrices): the classic 4x expansion.
-    mlp = AblmConfig(hidden_size=960, num_attention_heads=15, ffn_activation="gelu_mlp")
+    mlp = AblmConfig(hidden_size=960, num_attention_heads=15, ffn_activation="gelu")
     assert mlp.intermediate_size == 3840
 
 

@@ -66,7 +66,7 @@ def test_anchor_masked_lm_compiles_and_trains_one_step() -> None:
 
 
 @pytest.mark.slow
-@pytest.mark.parametrize("ffn_activation", ["swiglu", "geglu", "reglu", "gelu_mlp"])
+@pytest.mark.parametrize("ffn_activation", ["swiglu", "geglu", "reglu", "gelu"])
 def test_every_ffn_variant_compiles(ffn_activation: str) -> None:
     """Each FFN variant the screen sweeps must compile without a graph break."""
     _train_one_compiled_step(_anchor_shaped_config(ffn_activation=ffn_activation))
