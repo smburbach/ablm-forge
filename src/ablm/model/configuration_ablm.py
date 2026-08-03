@@ -7,7 +7,7 @@ from typing import Any
 
 from transformers import PretrainedConfig
 
-from .ffn import round_up_to
+from .layers.ffn import round_up_to
 
 __all__ = ["AblmConfig"]
 

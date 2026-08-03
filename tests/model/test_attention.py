@@ -1,4 +1,4 @@
-"""Tests for `ablm.model.attention` — AblmAttention (SDPA + manual-softmax paths)."""
+"""Tests for `ablm.model.layers.attention` — AblmAttention (SDPA + manual-softmax paths)."""
 
 from __future__ import annotations
 
@@ -9,8 +9,8 @@ import torch
 from torch import nn
 
 from ablm import AblmConfig, AblmForMaskedLM
-from ablm.model.attention import AblmAttention
-from ablm.model.norm import AblmLayerNorm, AblmRMSNorm
+from ablm.model.layers.attention import AblmAttention
+from ablm.model.layers.norm import AblmLayerNorm, AblmRMSNorm
 
 
 def _config(

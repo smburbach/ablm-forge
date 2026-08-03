@@ -1,4 +1,4 @@
-"""Tests for `ablm.model.ffn` — GatedFFN, MLP, round_up_to, make_ffn."""
+"""Tests for `ablm.model.layers.ffn` — GatedFFN, MLP, round_up_to, make_ffn."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import pytest
 import torch
 from torch.nn import functional as F
 
-from ablm.model.ffn import MLP, GatedFFN, make_ffn, round_up_to
+from ablm.model.layers.ffn import MLP, GatedFFN, make_ffn, round_up_to
 
 
 def _config(
@@ -195,6 +195,6 @@ def test_ffn_variant_registry_matches_config_allow_list():
     """`_FFN_VARIANTS` (ffn.py) and `_VALID_FFN_ACTIVATIONS` (configuration_ablm.py)
     are independent hand-maintained sources of truth; guard against drift."""
     from ablm.model.configuration_ablm import _VALID_FFN_ACTIVATIONS
-    from ablm.model.ffn import _FFN_VARIANTS
+    from ablm.model.layers.ffn import _FFN_VARIANTS
 
     assert set(_FFN_VARIANTS) == set(_VALID_FFN_ACTIVATIONS)

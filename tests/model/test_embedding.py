@@ -1,4 +1,4 @@
-"""Tests for `ablm.model.embedding` — AblmEmbedding, mean_pool, cls_pool."""
+"""Tests for `ablm.model.layers.embedding` — AblmEmbedding, mean_pool, cls_pool."""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ from types import SimpleNamespace
 
 import torch
 
-from ablm.model.embedding import AblmEmbedding, cls_pool, mean_pool
-from ablm.model.norm import AblmLayerNorm, AblmRMSNorm
+from ablm.model.layers.embedding import AblmEmbedding, cls_pool, mean_pool
+from ablm.model.layers.norm import AblmLayerNorm, AblmRMSNorm
 
 
 def _config(

@@ -1,11 +1,11 @@
-"""Tests for `ablm.model.rope` — RotaryEmbedding (full and partial RoPE)."""
+"""Tests for `ablm.model.layers.rope` — RotaryEmbedding (full and partial RoPE)."""
 
 from __future__ import annotations
 
 import pytest
 import torch
 
-from ablm.model.rope import RotaryEmbedding
+from ablm.model.layers.rope import RotaryEmbedding
 
 
 def _make_qk(

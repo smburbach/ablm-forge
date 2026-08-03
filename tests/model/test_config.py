@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from ablm.model import AblmConfig
-from ablm.model.ffn import round_up_to
+from ablm.model.layers.ffn import round_up_to
 
 if TYPE_CHECKING:
     from pathlib import Path

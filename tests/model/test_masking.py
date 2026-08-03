@@ -1,11 +1,11 @@
-"""Tests for `ablm.model.masking` — prepare_attention_mask."""
+"""Tests for `ablm.model.layers.masking` — prepare_attention_mask."""
 
 from __future__ import annotations
 
 import pytest
 import torch
 
-from ablm.model.masking import prepare_attention_mask
+from ablm.model.layers.masking import prepare_attention_mask
 
 # ---------------------------------------------------------------------------
 # prepare_attention_mask

@@ -13,8 +13,8 @@ import pytest
 import torch
 
 from ablm import AblmConfig, AblmForMaskedLM
-from ablm.model.embedding import _TOKEN_DROPOUT_MASK_RATIO_TRAIN, AblmEmbedding
-from ablm.model.norm import AblmLayerNorm
+from ablm.model.layers.embedding import _TOKEN_DROPOUT_MASK_RATIO_TRAIN, AblmEmbedding
+from ablm.model.layers.norm import AblmLayerNorm
 
 
 def _tiny(**kw) -> AblmConfig:

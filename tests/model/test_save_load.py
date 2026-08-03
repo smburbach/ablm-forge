@@ -82,14 +82,3 @@ def test_tokenizer_round_trip_resolves_to_ablm_fast(tmp_path: Path) -> None:
     assert type(reloaded).__name__ == "AblmTokenizerFast"
     # Canonical parity check survives the round-trip.
     assert reloaded("MEEPQ").input_ids == [0, 20, 9, 9, 14, 16, 2]
-
-
-def test_from_pretrained_auto_attaches_tokenizer(tmp_path: Path) -> None:
-    """When tokenizer files sit beside the weights, from_pretrained attaches them."""
-    model = AblmForMaskedLM(_tiny_config())
-    model.save_pretrained(tmp_path)
-    AblmTokenizerFast().save_pretrained(tmp_path)
-
-    reloaded = AblmForMaskedLM.from_pretrained(tmp_path)
-    assert reloaded.tokenizer is not None
-    assert type(reloaded.tokenizer).__name__ == "AblmTokenizerFast"

@@ -1,14 +1,12 @@
-"""All public Ablm* model classes — single file for trust_remote_code compatibility.
+"""All public Ablm* model classes.
 
-Every public model class lives in one module so that `auto_map` +
-`trust_remote_code` loading works without chasing imports across files. Internal
-building blocks live in their own modules and are imported here.
+Every public model class lives in one module (standard HF convention);
+the architecture building blocks live in `.layers` and are imported here.
 """
 
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING
 
 import torch
 from torch import nn
@@ -22,27 +20,10 @@ from transformers.modeling_outputs import (
     TokenClassifierOutput,
 )
 
-# A few of these relative imports (`attention`, `conv`, `ffn`, `masking`, `rope`)
-# are not used directly here — they are reached transitively via `transformer`.
-# They are imported anyway so that loading custom code from a local directory
-# with trust_remote_code=True bundles every helper file: HuggingFace copies only
-# a module's *direct* relative imports (depth-1; see
-# transformers.dynamic_module_utils.get_cached_module_file). `_REMOTE_CODE_DEPS`
-# references the otherwise-unused names so linters don't flag them.
-from .attention import AblmAttention
 from .configuration_ablm import AblmConfig
-from .embedding import cls_pool, mean_pool
-from .ffn import GatedFFN
-from .masking import prepare_attention_mask
-from .norm import AblmLayerNorm, AblmRMSNorm, make_norm
-from .outputs import LogitsConfig, LogitsOutput
-from .rope import RotaryEmbedding
-from .transformer import AblmBlock, AblmStack
-
-_REMOTE_CODE_DEPS = (AblmAttention, GatedFFN, prepare_attention_mask, RotaryEmbedding)
-
-if TYPE_CHECKING:
-    from transformers.tokenization_utils_base import BatchEncoding, PreTrainedTokenizerBase
+from .layers.embedding import cls_pool, mean_pool
+from .layers.norm import AblmLayerNorm, AblmRMSNorm, make_norm
+from .layers.transformer import AblmBlock, AblmStack
 
 __all__ = [
     "AblmPreTrainedModel",
@@ -51,12 +32,11 @@ __all__ = [
     "AblmForSequenceClassification",
     "AblmForTokenClassification",
     "AblmMLMHead",
-    "EsmcCompatMixin",
 ]
 
 
 class AblmPreTrainedModel(PreTrainedModel):
-    """Abstract base for every ABLM model: weight init, gradient checkpointing, tokenizer attach."""
+    """Abstract base for every ABLM model: weight init and gradient checkpointing."""
 
     config_class = AblmConfig
     base_model_prefix = "ablm"
@@ -117,121 +97,16 @@ class AblmPreTrainedModel(PreTrainedModel):
         """Disable activation checkpointing on every transformer block."""
         self._set_gradient_checkpointing(False)
 
-    # ------------------------------------------------------------------
-    # Tokenizer auto-attachment.
-    # ------------------------------------------------------------------
 
-    @classmethod
-    def from_pretrained(cls, pretrained_model_name_or_path, *args, **kwargs):
-        """Load the model and best-effort attach the saved tokenizer.
-
-        If no tokenizer files sit next to the weights (scratch models, offline
-        workflows, tests), `model.tokenizer` stays `None` and any call to
-        `tokenize`/`encode`/`logits` raises with an actionable message.
-        """
-        model = super().from_pretrained(pretrained_model_name_or_path, *args, **kwargs)
-        try:
-            from transformers import AutoTokenizer
-
-            model.tokenizer = AutoTokenizer.from_pretrained(
-                pretrained_model_name_or_path,
-                trust_remote_code=kwargs.get("trust_remote_code", False),
-            )
-        except (OSError, ValueError):
-            model.tokenizer = None
-        return model
-
-
-class EsmcCompatMixin:
-    """ESM-C-style convenience API (`tokenize`, `encode`, `logits`).
-
-    Holds an optional `self.tokenizer`. There is deliberately no lazy
-    `AutoTokenizer.from_pretrained` fallback — that pattern silently breaks for
-    scratch models, offline workflows, and tests where tokenizer files do not
-    exist next to the config. Attach a tokenizer either by loading through
-    `Ablm*.from_pretrained(<path-with-tokenizer-files>)` or by assigning
-    `model.tokenizer = AutoTokenizer.from_pretrained(...)`.
-    """
-
-    # NOTE: no class-level type annotation on `tokenizer` — transformers'
-    # `PreTrainedModel.__init_subclass__` eagerly resolves class-body
-    # annotations via `get_type_hints`, which would force a runtime import of
-    # `PreTrainedTokenizerBase`. The plain default keeps that import deferrable.
-    tokenizer = None
-
-    def tokenize(self, seqs: list[str], **tokenizer_kwargs) -> BatchEncoding:
-        """Tokenize `seqs` with the attached tokenizer and move to the model device."""
-        tok = self._require_tokenizer()
-        defaults = {"return_tensors": "pt", "padding": True}
-        defaults.update(tokenizer_kwargs)
-        batch = tok(seqs, **defaults)
-        try:
-            # EsmcCompatMixin is always mixed into an nn.Module subclass.
-            device = next(self.parameters()).device  # ty: ignore[unresolved-attribute]
-        except StopIteration:
-            device = torch.device("cpu")
-        return batch.to(device)
-
-    def encode(self, seqs: list[str], **tokenizer_kwargs) -> torch.Tensor:
-        """ESM-C-compatible: return the padded `input_ids` only.
-
-        Warning:
-            This returns input IDs **without** the attention mask. If you feed
-            the result into `forward()` without also passing `attention_mask`,
-            pad tokens are treated as real input. Prefer `tokenize()` (returns
-            the full `BatchEncoding`) or `logits()` (handles the mask plumbing
-            internally).
-        """
-        return self.tokenize(seqs, **tokenizer_kwargs).input_ids
-
-    def logits(self, seqs: list[str], config: LogitsConfig | None = None) -> LogitsOutput:
-        """Run the model on `seqs` and return a structured `LogitsOutput`."""
-        cfg = config or LogitsConfig()
-        batch = self.tokenize(seqs)
-        out = self(  # ty: ignore[call-non-callable]  # mixin is always mixed into nn.Module
-            input_ids=batch.input_ids,
-            attention_mask=batch.attention_mask,
-            output_hidden_states=(cfg.return_hidden_states or cfg.return_embeddings),
-            output_attentions=cfg.return_attentions,
-            return_dict=True,
-        )
-        embeddings = None
-        if cfg.return_embeddings:
-            # `AblmModel` exposes the post-final-norm state directly; task heads
-            # only carry the per-layer tuple, so fall back to its last entry.
-            embeddings = getattr(out, "last_hidden_state", None)
-            if embeddings is None:
-                embeddings = out.hidden_states[-1]
-        return LogitsOutput(
-            sequence_logits=getattr(out, "logits", None) if cfg.sequence else None,
-            embeddings=embeddings,
-            hidden_states=out.hidden_states if cfg.return_hidden_states else None,
-            attentions=out.attentions if cfg.return_attentions else None,
-        )
-
-    def _require_tokenizer(self) -> PreTrainedTokenizerBase:
-        if getattr(self, "tokenizer", None) is None:
-            raise RuntimeError(
-                "No tokenizer attached. Either load via "
-                "`Ablm*.from_pretrained(<path-with-tokenizer-files>)` "
-                "or assign one manually with "
-                "`model.tokenizer = AutoTokenizer.from_pretrained(...)`."
-            )
-        # Narrowed non-None by the guard above; ty does not track it through getattr.
-        return self.tokenizer  # ty: ignore[invalid-return-type]
-
-
-class AblmModel(AblmPreTrainedModel, EsmcCompatMixin):
+class AblmModel(AblmPreTrainedModel):
     """The ABLM encoder backbone — token embedding, N × AblmBlock, final norm.
 
-    Returns a `BaseModelOutput`. Has no task head, so `logits()` returns
-    `sequence_logits=None` (there is no `logits` attribute on the output).
+    Returns a `BaseModelOutput`. Has no task head.
     """
 
     def __init__(self, config: AblmConfig) -> None:
         super().__init__(config)
         self.backbone = AblmStack(config)
-        self.tokenizer = None
         self.post_init()
 
     def get_input_embeddings(self) -> nn.Module:
@@ -297,7 +172,7 @@ class AblmMLMHead(nn.Module):
         return self.decoder(self.norm(self.act(self.dense(x))))
 
 
-class AblmForMaskedLM(AblmPreTrainedModel, EsmcCompatMixin):
+class AblmForMaskedLM(AblmPreTrainedModel):
     """ABLM with a masked-language-model head."""
 
     _tied_weights_keys = {
@@ -308,7 +183,6 @@ class AblmForMaskedLM(AblmPreTrainedModel, EsmcCompatMixin):
         super().__init__(config)
         self.ablm = AblmModel(config)
         self.lm_head = AblmMLMHead(config)
-        self.tokenizer = None
         self.post_init()
 
     def get_input_embeddings(self) -> nn.Module:
@@ -366,7 +240,7 @@ class AblmForMaskedLM(AblmPreTrainedModel, EsmcCompatMixin):
         )
 
 
-class AblmForSequenceClassification(AblmPreTrainedModel, EsmcCompatMixin):
+class AblmForSequenceClassification(AblmPreTrainedModel):
     """ABLM with a pooled sequence-classification head."""
 
     def __init__(self, config: AblmConfig) -> None:
@@ -384,7 +258,6 @@ class AblmForSequenceClassification(AblmPreTrainedModel, EsmcCompatMixin):
             self.pre_head_norm = nn.Identity()
         self.dropout = nn.Dropout(config.classifier_dropout)
         self.classifier = nn.Linear(config.hidden_size, config.num_labels, bias=True)
-        self.tokenizer = None
         self.post_init()
 
     def get_input_embeddings(self) -> nn.Module:
@@ -471,7 +344,7 @@ class AblmForSequenceClassification(AblmPreTrainedModel, EsmcCompatMixin):
         return F.binary_cross_entropy_with_logits(logits, labels.float())
 
 
-class AblmForTokenClassification(AblmPreTrainedModel, EsmcCompatMixin):
+class AblmForTokenClassification(AblmPreTrainedModel):
     """ABLM with a per-token classification head."""
 
     def __init__(self, config: AblmConfig) -> None:
@@ -489,7 +362,6 @@ class AblmForTokenClassification(AblmPreTrainedModel, EsmcCompatMixin):
             self.pre_head_norm = nn.Identity()
         self.dropout = nn.Dropout(config.classifier_dropout)
         self.classifier = nn.Linear(config.hidden_size, config.num_labels, bias=True)
-        self.tokenizer = None
         self.post_init()
 
     def get_input_embeddings(self) -> nn.Module:

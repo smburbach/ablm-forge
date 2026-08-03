@@ -1,4 +1,4 @@
-"""Tests for `ablm.model.transformer` — AblmBlock and AblmStack."""
+"""Tests for `ablm.model.layers.transformer` — AblmBlock and AblmStack."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ from types import SimpleNamespace
 import pytest
 import torch
 
-from ablm.model.norm import AblmLayerNorm
-from ablm.model.transformer import AblmBlock, AblmStack
+from ablm.model.layers.norm import AblmLayerNorm
+from ablm.model.layers.transformer import AblmBlock, AblmStack
 
 
 def _config(

@@ -74,12 +74,17 @@ gated variants.
   is enabled, and `optimizer_cls_and_kwargs` can't express the name-based
   Muon/AdamW split. Don't override `training_step`/`compute_loss`/the loop, and
   don't add other subclasses.
-- **Attention is SDPA + a manual fallback** in `ablm/model/attention.py`. Don't
-  reintroduce a kernel registry / explicit flash-attn integration: SDPA already
-  auto-selects the fused backend. (Keep attention in one file, not a subpackage —
-  HF copies only depth-1 relative imports for `trust_remote_code`.)
-- **All public model classes in `modeling_ablm.py`** for the same
-  `trust_remote_code` reason; internal blocks live in their own modules.
+- **Attention is SDPA + a manual fallback** in `ablm/model/layers/attention.py`.
+  Don't reintroduce a kernel registry / explicit flash-attn integration: SDPA
+  already auto-selects the fused backend.
+- **All public model classes in `modeling_ablm.py`** (standard HF convention);
+  the architecture building blocks live in the `model/layers/` subpackage.
+- **Loading is register-based** (BALM-style): `import ablm` registers the classes
+  with the Auto* factories, so checkpoints reload via `AutoModel*.from_pretrained`
+  **with ablm-forge installed** — no `register_for_auto_class` / `auto_map` /
+  `trust_remote_code`. That's what lets the model package use subpackages; don't
+  reintroduce the file-copy path (it forces a flat package and can't follow
+  subpackage-relative imports).
 - **MoE is out of scope.** Do not reintroduce it.
 
 ## Architecture
@@ -93,12 +98,13 @@ gated variants.
 ```
 src/ablm/
 ├── model/
-│   ├── outputs.py norm.py masking.py rope.py embedding.py ffn.py
-│   ├── attention.py            # AblmAttention: SDPA + manual-softmax fallback
-│   ├── transformer.py          # AblmBlock + AblmStack (FSDP wrap unit: AblmBlock)
 │   ├── configuration_ablm.py   # AblmConfig
 │   ├── tokenization_ablm.py    # AblmTokenizerFast (33-token ESM-C vocab)
-│   └── modeling_ablm.py        # all public Ablm* model classes
+│   ├── modeling_ablm.py        # all public Ablm* model classes
+│   └── layers/                 # architecture building blocks (the screen surface)
+│       ├── norm.py masking.py rope.py embedding.py ffn.py
+│       ├── attention.py        # AblmAttention: SDPA + manual-softmax fallback
+│       └── transformer.py      # AblmBlock + AblmStack (FSDP wrap unit: AblmBlock)
 └── training/
     └── optim.py                # Muon CombinedOptimizer + build_muon_optimizer
 scripts/pretrain.py             # example training script: data loading + Trainer wiring
