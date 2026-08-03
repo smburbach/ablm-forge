@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from ablm import AblmConfig
-from ablm.presets import PRESETS, from_preset
+from ablm import PRESETS, AblmConfig, from_preset
 
 _EXPECTED = {
     "35m": (16, 512),

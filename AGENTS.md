@@ -70,7 +70,9 @@ gated variants.
 - **No config system, no CLI.** Configuration lives in Python: `AblmConfig`
   (a `PretrainedConfig`) for the model, `transformers.TrainingArguments` for
   training, composed in a script (`scripts/pretrain.py`). Don't add OmegaConf /
-  YAML config trees / a `train` CLI / presets.
+  YAML config trees / a `train` CLI. The in-code muP preset ladder in
+  `model/presets.py` (see above) is the sanctioned exception — a plain Python
+  registry, not a config system; don't add external/YAML preset files.
 - **No custom trainer loop; subclass `Trainer` only to build Muon.** Use stock
   `transformers.Trainer`. HF-native optimizers via `TrainingArguments.optim`;
   schedules via `lr_scheduler_type`. The *one* sanctioned subclass is
