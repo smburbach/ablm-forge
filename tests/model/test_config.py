@@ -144,12 +144,12 @@ def test_rejects_negative_rope_dim():
 @pytest.mark.parametrize(
     "field,bad_value,expected_match",
     [
-        ("norm_type", "zorm", "norm_type must be one of"),
-        ("norm_strategy", "preprost", "norm_strategy must be one of"),
-        ("residual_scaling", "linear", "residual_scaling must be one of"),
-        ("ffn_activation", "relu", "ffn_activation must be one of"),
-        ("mlm_head_activation", "swiglu", "mlm_head_activation must be one of"),
-        ("classifier_pool", "max", "classifier_pool must be one of"),
+        ("norm_type", "zorm", "is not a valid NormType"),
+        ("norm_strategy", "preprost", "is not a valid NormStrategy"),
+        ("residual_scaling", "linear", "is not a valid ResidualScaling"),
+        ("ffn_activation", "relu", "is not a valid FfnActivation"),
+        ("mlm_head_activation", "swiglu", "is not a valid MlmHeadActivation"),
+        ("classifier_pool", "max", "is not a valid ClassifierPool"),
     ],
 )
 def test_rejects_unknown_categorical_values(field, bad_value, expected_match):
@@ -232,5 +232,5 @@ def test_intermediate_size_derivation_is_variant_aware():
 
 
 def test_unknown_ffn_activation_raises_at_config_construction():
-    with pytest.raises(ValueError, match="ffn_activation must be one of"):
+    with pytest.raises(ValueError, match="is not a valid FfnActivation"):
         AblmConfig(ffn_activation="not_a_variant")

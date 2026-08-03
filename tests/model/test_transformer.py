@@ -105,16 +105,9 @@ def test_block_alpha_is_persistent_buffer():
     assert "alpha" in block.state_dict(), "alpha must be persistent (saved in state_dict)"
 
 
-def test_block_rejects_unknown_residual_scaling():
-    cfg = _config(residual_scaling="bogus")
-    with pytest.raises(ValueError, match="residual_scaling"):
-        AblmBlock(cfg, layer_idx=0)
-
-
-def test_block_rejects_unknown_norm_strategy():
-    cfg = _config(norm_strategy="zzz")
-    with pytest.raises(ValueError, match="norm_strategy"):
-        AblmBlock(cfg, layer_idx=0)
+# NOTE: invalid norm_strategy / residual_scaling are rejected by AblmConfig's StrEnum
+# coercion (see tests/model/test_config.py); AblmBlock trusts the validated config, so
+# there are no block-level rejection tests.
 
 
 @pytest.mark.parametrize("strategy", ["pre", "sandwich", "post_sdpa"])

@@ -191,10 +191,10 @@ def test_down_proj_is_marked_residual_writer_on_both_structures():
     assert make_ffn(_config(ffn_activation="gelu_mlp")).down_proj._is_residual_writer is True
 
 
-def test_ffn_variant_registry_matches_config_allow_list():
-    """`_FFN_VARIANTS` (ffn.py) and `_VALID_FFN_ACTIVATIONS` (configuration_ablm.py)
-    are independent hand-maintained sources of truth; guard against drift."""
-    from ablm.model.configuration_ablm import _VALID_FFN_ACTIVATIONS
+def test_every_ffn_activation_has_a_registry_entry():
+    """The FfnActivation enum is the single source of truth; every declared variant
+    must have a `_FFN_VARIANTS` implementation (else `make_ffn` would KeyError)."""
+    from ablm.model.config_types import FfnActivation
     from ablm.model.layers.ffn import _FFN_VARIANTS
 
-    assert set(_FFN_VARIANTS) == set(_VALID_FFN_ACTIVATIONS)
+    assert set(_FFN_VARIANTS) == set(FfnActivation)

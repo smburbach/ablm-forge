@@ -9,6 +9,7 @@ import torch
 from torch import nn
 from torch.utils import checkpoint as torch_checkpoint
 
+from ..config_types import NormStrategy, ResidualScaling
 from .attention import AblmAttention
 from .embedding import AblmEmbedding
 from .ffn import make_ffn
@@ -38,15 +39,12 @@ class AblmBlock(nn.Module):
         self.residual_scaling = config.residual_scaling
         self.gradient_checkpointing = bool(getattr(config, "gradient_checkpointing", False))
 
-        if config.residual_scaling == "sqrt_num_layers":
+        # residual_scaling is validated by AblmConfig (ResidualScaling enum); only the
+        # two members exist, so NONE falls through to alpha = 1.0.
+        if config.residual_scaling == ResidualScaling.SQRT_NUM_LAYERS:
             alpha_val = 1.0 / math.sqrt(config.num_hidden_layers)
-        elif config.residual_scaling == "none":
-            alpha_val = 1.0
         else:
-            raise ValueError(
-                f"Unknown residual_scaling {config.residual_scaling!r}; "
-                "expected 'sqrt_num_layers' or 'none'."
-            )
+            alpha_val = 1.0
         # Register as a persistent buffer (scalar tensor) rather than a plain Python float.
         #
         # Why a buffer at all: torch.compile + DDP (DDPOptimizer) lifts plain-float
@@ -61,16 +59,10 @@ class AblmBlock(nn.Module):
         # stay as garbage after loading, producing near-zero alpha and broken outputs.
         self.register_buffer("alpha", torch.tensor(alpha_val), persistent=True)
 
-        if config.norm_strategy not in {"pre", "sandwich", "hybrid", "post_sdpa"}:
-            raise ValueError(
-                f"Unknown norm_strategy {config.norm_strategy!r}; "
-                "expected one of 'pre', 'sandwich', 'hybrid', 'post_sdpa'."
-            )
-
         norm_bias = getattr(config, "norm_bias", True)
 
         # Attention pre-norm: present under every strategy except hybrid.
-        if config.norm_strategy != "hybrid":
+        if config.norm_strategy != NormStrategy.HYBRID:
             self.attn_norm: nn.Module = make_norm(
                 config.norm_type, config.hidden_size, eps=config.norm_eps, bias=norm_bias
             )
@@ -85,14 +77,14 @@ class AblmBlock(nn.Module):
         self.ffn = make_ffn(config)
 
         # Strategy-specific post-norms.
-        if config.norm_strategy == "sandwich":
+        if config.norm_strategy == NormStrategy.SANDWICH:
             self.attn_post_norm: nn.Module = make_norm(
                 config.norm_type, config.hidden_size, eps=config.norm_eps, bias=norm_bias
             )
             self.ffn_post_norm: nn.Module = make_norm(
                 config.norm_type, config.hidden_size, eps=config.norm_eps, bias=norm_bias
             )
-        elif config.norm_strategy == "post_sdpa":
+        elif config.norm_strategy == NormStrategy.POST_SDPA:
             self.attn_post_norm = make_norm(
                 config.norm_type, config.hidden_size, eps=config.norm_eps, bias=norm_bias
             )
@@ -105,11 +97,11 @@ class AblmBlock(nn.Module):
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
         # Attention sublayer. Hybrid feeds raw `x` (QKV-norm lives inside the
         # attention module); every other strategy applies the outer pre-norm.
-        a_in = x if self.norm_strategy == "hybrid" else self.attn_norm(x)
+        a_in = x if self.norm_strategy == NormStrategy.HYBRID else self.attn_norm(x)
 
         attn_out, attn_weights = self.attention(a_in, attention_mask, output_attentions)
 
-        if self.norm_strategy in {"sandwich", "post_sdpa"}:
+        if self.norm_strategy in {NormStrategy.SANDWICH, NormStrategy.POST_SDPA}:
             attn_out = self.attn_post_norm(attn_out)
         h = x + self.alpha * attn_out
 
@@ -117,13 +109,13 @@ class AblmBlock(nn.Module):
         h_norm = self.ffn_norm(h)
         ffn_out = self.ffn(h_norm)
 
-        if self.norm_strategy == "sandwich":
+        if self.norm_strategy == NormStrategy.SANDWICH:
             ffn_out = self.ffn_post_norm(ffn_out)
             y = h + self.alpha * ffn_out
-        elif self.norm_strategy == "hybrid":
+        elif self.norm_strategy == NormStrategy.HYBRID:
             # Hybrid reuses Norm(h) as both FFN input and FFN-side residual stream.
             y = h_norm + self.alpha * ffn_out
-        else:  # "pre" or "post_sdpa"
+        else:  # pre or post_sdpa
             y = h + self.alpha * ffn_out
 
         return y, attn_weights

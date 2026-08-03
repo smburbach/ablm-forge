@@ -7,19 +7,18 @@ from typing import Any
 
 from transformers import PretrainedConfig
 
+from .config_types import (
+    ClassifierPool,
+    FfnActivation,
+    MlmHeadActivation,
+    NormStrategy,
+    NormType,
+    ResidualScaling,
+)
 from .layers.ffn import round_up_to
 
 __all__ = ["AblmConfig"]
 
-
-_VALID_NORM_TYPES = ("layernorm", "rmsnorm")
-_VALID_NORM_STRATEGIES = ("pre", "sandwich", "hybrid", "post_sdpa")
-_VALID_RESIDUAL_SCALINGS = ("sqrt_num_layers", "none")
-# Must mirror ffn.py's _FFN_VARIANTS keys; guarded by
-# test_ffn_variant_registry_matches_config_allow_list.
-_VALID_FFN_ACTIVATIONS = ("swiglu", "geglu", "reglu", "gelu_mlp")
-_VALID_MLM_HEAD_ACTIVATIONS = ("gelu", "silu", "relu")
-_VALID_CLASSIFIER_POOLS = ("mean", "cls")
 
 _DEFAULT_VOCAB_SIZE = 33
 
@@ -47,24 +46,24 @@ class AblmConfig(PretrainedConfig):
         rope_theta: float = 10000.0,
         rope_dim: int | None = None,
         nope_dim: int = 0,
-        norm_type: str = "layernorm",
+        norm_type: NormType | str = NormType.LAYERNORM,
         norm_eps: float = 1e-6,
         norm_bias: bool = False,
-        norm_strategy: str = "pre",
+        norm_strategy: NormStrategy | str = NormStrategy.PRE,
         qk_norm: bool = False,
         post_embed_norm: bool = False,
-        residual_scaling: str = "none",
+        residual_scaling: ResidualScaling | str = ResidualScaling.NONE,
         init_scale_output_projections: bool = True,
-        ffn_activation: str = "swiglu",
+        ffn_activation: FfnActivation | str = FfnActivation.SWIGLU,
         ffn_bias: bool = False,
         token_dropout: bool = False,
         attention_bias: bool = False,
         attention_dropout: float = 0.0,
         hidden_dropout: float = 0.0,
         tie_word_embeddings: bool = False,
-        mlm_head_activation: str = "gelu",
+        mlm_head_activation: MlmHeadActivation | str = MlmHeadActivation.GELU,
         initializer_range: float = 0.02,
-        classifier_pool: str = "mean",
+        classifier_pool: ClassifierPool | str = ClassifierPool.MEAN,
         classifier_dropout: float = 0.0,
         num_labels: int = 2,
         pre_head_norm: bool = False,
@@ -91,23 +90,23 @@ class AblmConfig(PretrainedConfig):
         self.rope_theta = float(rope_theta)
         self.rope_dim = rope_dim if rope_dim is None else int(rope_dim)
         self.nope_dim = int(nope_dim)
-        self.norm_type = norm_type
+        self.norm_type = NormType(norm_type)
         self.norm_eps = float(norm_eps)
         self.norm_bias = bool(norm_bias)
-        self.norm_strategy = norm_strategy
+        self.norm_strategy = NormStrategy(norm_strategy)
         self.qk_norm = bool(qk_norm)
         self.post_embed_norm = bool(post_embed_norm)
-        self.residual_scaling = residual_scaling
+        self.residual_scaling = ResidualScaling(residual_scaling)
         self.init_scale_output_projections = bool(init_scale_output_projections)
-        self.ffn_activation = ffn_activation
+        self.ffn_activation = FfnActivation(ffn_activation)
         self.ffn_bias = bool(ffn_bias)
         self.token_dropout = bool(token_dropout)
         self.attention_bias = bool(attention_bias)
         self.attention_dropout = float(attention_dropout)
         self.hidden_dropout = float(hidden_dropout)
-        self.mlm_head_activation = mlm_head_activation
+        self.mlm_head_activation = MlmHeadActivation(mlm_head_activation)
         self.initializer_range = float(initializer_range)
-        self.classifier_pool = classifier_pool
+        self.classifier_pool = ClassifierPool(classifier_pool)
         self.classifier_dropout = float(classifier_dropout)
         # `num_labels` is a property on PretrainedConfig that derives from
         # `id2label` (set in super().__init__). Forward it via kwargs below
@@ -153,7 +152,7 @@ class AblmConfig(PretrainedConfig):
             self.head_dim = self.hidden_size // self.num_attention_heads
 
         if self.intermediate_size is None:
-            if self.ffn_activation == "gelu_mlp":
+            if self.ffn_activation == FfnActivation.GELU_MLP:
                 # Non-gated MLP (2 matrices): the classic 4x expansion.
                 self.intermediate_size = round_up_to(4 * self.hidden_size, 256)
             else:
@@ -209,35 +208,10 @@ class AblmConfig(PretrainedConfig):
                 f"got {self.rope_dim}."
             )
 
-        if self.norm_type not in _VALID_NORM_TYPES:
-            raise ValueError(
-                f"norm_type must be one of {_VALID_NORM_TYPES}; got {self.norm_type!r}."
-            )
-        if self.norm_strategy not in _VALID_NORM_STRATEGIES:
-            raise ValueError(
-                f"norm_strategy must be one of {_VALID_NORM_STRATEGIES}; "
-                f"got {self.norm_strategy!r}."
-            )
-        if self.residual_scaling not in _VALID_RESIDUAL_SCALINGS:
-            raise ValueError(
-                f"residual_scaling must be one of {_VALID_RESIDUAL_SCALINGS}; "
-                f"got {self.residual_scaling!r}."
-            )
-        if self.ffn_activation not in _VALID_FFN_ACTIVATIONS:
-            raise ValueError(
-                f"ffn_activation must be one of {_VALID_FFN_ACTIVATIONS}; "
-                f"got {self.ffn_activation!r}."
-            )
-        if self.mlm_head_activation not in _VALID_MLM_HEAD_ACTIVATIONS:
-            raise ValueError(
-                f"mlm_head_activation must be one of {_VALID_MLM_HEAD_ACTIVATIONS}; "
-                f"got {self.mlm_head_activation!r}."
-            )
-        if self.classifier_pool not in _VALID_CLASSIFIER_POOLS:
-            raise ValueError(
-                f"classifier_pool must be one of {_VALID_CLASSIFIER_POOLS}; "
-                f"got {self.classifier_pool!r}."
-            )
+        # The categorical fields (norm_type, norm_strategy, residual_scaling,
+        # ffn_activation, mlm_head_activation, classifier_pool) validate themselves:
+        # `__init__` coerces each through its StrEnum, which raises ValueError on an
+        # unknown value. See `config_types.py`.
 
         if self.vocab_size != _DEFAULT_VOCAB_SIZE:
             warnings.warn(
