@@ -9,7 +9,8 @@ from ablm import AblmConfig, AblmForMaskedLM, AblmForSequenceClassification
 from ablm.training.optim import build_muon_optimizer
 
 pytestmark = pytest.mark.skipif(
-    not hasattr(torch.optim, "Muon"), reason="requires torch.optim.Muon (torch >= 2.11)"
+    not hasattr(torch.optim, "Muon"),
+    reason="DistributedMuon reuses torch.optim._muon internals (torch >= 2.11)",
 )
 
 

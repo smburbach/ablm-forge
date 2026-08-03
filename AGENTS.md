@@ -2,7 +2,7 @@
 
 Lab base model-architecture repo for antibody/protein language-model
 experiments. An ESM-style bidirectional encoder wired to the stock HuggingFace
-`Trainer`, launched via `torchrun` + FSDP2, with SDPA-based attention and Muon
+`Trainer`, launched via `accelerate --multi_gpu` (DDP), with SDPA-based attention and Muon
 as the recommended production optimizer. It is a **library, not a framework**:
 no config system, no CLI — you compose the pieces in a training script
 (`scripts/pretrain.py` is the example).
@@ -10,7 +10,7 @@ no config system, no CLI — you compose the pieces in a training script
 Muon is the recommended optimizer for production runs: on a 350M AbLM it reached
 lower eval loss than AdamW reproducibly (the largest single architectural effect
 measured, -0.0058 eval/loss) and is LR-robust where AdamW degrades above ~1e-4.
-AdamW remains the default for iteration and the safe choice under FSDP.
+AdamW remains the default for iteration.
 
 This file is the single source of truth for agent and contributor instructions.
 Make all future updates here, not in `CLAUDE.md` (which points back to this file).
@@ -62,7 +62,7 @@ gated variants.
 
 - **Default presets** live in `model/presets.py` (`from_preset("300m")`,
   `AblmConfig.from_preset(...)`): a muP-correct, kernel-optimized ladder
-  (35m/150m/300m/600m/6b, d0=512). muP is opt-in (`mup_enabled`), so non-preset
+  (35m/150m/300m/600m, d0=512). muP is opt-in (`mup_enabled`), so non-preset
   configs are unaffected.
 
 ## Core design rules (do not violate)
@@ -73,14 +73,14 @@ gated variants.
   YAML config trees / a `train` CLI. The in-code muP preset ladder in
   `model/presets.py` (see above) is the sanctioned exception — a plain Python
   registry, not a config system; don't add external/YAML preset files.
-- **No custom trainer loop; subclass `Trainer` only to build Muon.** Use stock
+- **No custom trainer loop; compose the stock `Trainer` in the script.** Use stock
   `transformers.Trainer`. HF-native optimizers via `TrainingArguments.optim`;
-  schedules via `lr_scheduler_type`. The *one* sanctioned subclass is
-  `OptimizerTrainer`, which overrides only `create_optimizer` to build Muon — this
-  is mandatory, not stylistic: HF forbids a pre-built `optimizers=` tuple once FSDP
-  is enabled, and `optimizer_cls_and_kwargs` can't express the name-based
-  Muon/AdamW split. Don't override `training_step`/`compute_loss`/the loop, and
-  don't add other subclasses.
+  schedules via `lr_scheduler_type`. Muon is built in the script with
+  `build_muon_optimizer(model, ...)` and handed over via `optimizers=(opt, None)` —
+  no `Trainer` subclass. Everything else composes as constructor args / callbacks
+  (`data_collator=`, `compute_metrics=`, `callbacks=`); the one exception is
+  `RegionEvalMixin`, mixed into a Trainer subclass only when you need per-region
+  eval. Don't override `training_step`/`compute_loss`/the loop.
 - **Attention is SDPA + a manual fallback** in `ablm/model/layers/attention.py`.
   Don't reintroduce a kernel registry / explicit flash-attn integration: SDPA
   already auto-selects the fused backend.
@@ -111,7 +111,7 @@ src/ablm/
 │   └── layers/                 # architecture building blocks (the screen surface)
 │       ├── norm.py masking.py rope.py embedding.py ffn.py
 │       ├── attention.py        # AblmAttention: SDPA + manual-softmax fallback
-│       └── transformer.py      # AblmBlock + AblmStack (FSDP wrap unit: AblmBlock)
+│       └── transformer.py      # AblmBlock + AblmStack
 └── training/
     └── optim.py                # Muon CombinedOptimizer + build_muon_optimizer
 scripts/pretrain.py             # example training script: data loading + Trainer wiring
@@ -131,9 +131,9 @@ There's no entry point in the package — copy/edit `scripts/pretrain.py`:
 ```bash
 # single GPU
 python scripts/pretrain.py --data train.parquet --output-dir out
-# multi-GPU + FSDP2
-torchrun --standalone --nproc_per_node=8 scripts/pretrain.py \
-    --data train/ --output-dir out --fsdp --bf16 --gradient-checkpointing
+# multi-GPU (DDP)
+accelerate launch --multi_gpu --mixed_precision bf16 scripts/pretrain.py \
+    --data train/ --output-dir out --bf16 --gradient-checkpointing
 ```
 
 ## Code Style
@@ -147,10 +147,10 @@ torchrun --standalone --nproc_per_node=8 scripts/pretrain.py \
 - Mirror source layout. `pytest.fixture` for setup, `@pytest.mark.parametrize`
   for input variation, `@pytest.mark.slow` for multi-step / GPU runs.
 - Prefer real data (the parquet fixture under `tests/fixtures/training/`).
-- The pilot suite (`tests/training/test_pilot_train.py`,
-  `test_pilot_fsdp.py`) trains a tiny model end-to-end by composing the Trainer
-  directly (the `scripts/pretrain.py` flow); `test_pilot_fsdp.py` runs the script
-  under torchrun. Keep these green — they prove the HF-Trainer + FSDP2 wiring.
+- The pilot suite (`tests/training/test_pilot_train.py`) trains a tiny model
+  end-to-end for both the AdamW and Muon (`optimizers=`) arms, including
+  checkpoint save + resume — it proves the stock-`Trainer` + `build_muon_optimizer`
+  wiring (the `scripts/pretrain.py` flow). Keep it green.
 
 ## What Not To Do
 

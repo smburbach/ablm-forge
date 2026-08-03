@@ -1,32 +1,22 @@
 """Muon optimizer (2D transformer-body weights) + AdamW (everything else).
 
 HF-native optimizers are selected directly via `TrainingArguments.optim`. Muon is
-the one HF doesn't ship: `build_muon_optimizer` wraps `torch.optim.Muon` (on the
-2D attention/MLP weights) and `torch.optim.AdamW` (embeddings, LM head, norms,
-biases) in a single `CombinedOptimizer`.
+the one HF doesn't ship: `build_muon_optimizer` splits the model by name and wraps
+`DistributedMuon` (on the 2D attention/MLP body weights) and `torch.optim.AdamW`
+(embeddings, LM head, norms, biases, and the muP-scaled hidden AdamW matrices) in a
+single `CombinedOptimizer`. Build it in the training script and hand it to the stock
+`Trainer` via `optimizers=(opt, None)` -- no `Trainer` subclass; the LR scheduler
+still comes from `TrainingArguments`.
 
-`OptimizerTrainer` is a thin `Trainer` subclass that overrides only
-`create_optimizer` to build Muon. The subclass is required, not a preference: HF
-*forbids* passing a pre-built `optimizers=` tuple once FSDP is enabled
-("Passing `optimizers` is not allowed if PyTorch FSDP is enabled. You should
-subclass `Trainer` and override ...") and `optimizer_cls_and_kwargs` can't express
-the name-based Muon/AdamW split (HF hands it grouped tensors, not names). The
-override builds the optimizer *after* the model is FSDP-sharded. With Muon off it
-is exactly the stock Trainer; there is no custom training loop.
+`DistributedMuon` (see `distributed_muon.py`) shards the Newton-Schulz
+orthogonalization across the DDP group -- each rank orthogonalizes only its slice
+and the results are gathered back -- numerically identical to `torch.optim.Muon` but
+without the redundant per-rank compute. It assumes DDP (replicated params), which is
+how forge trains (`accelerate --multi_gpu`); it is not FSDP-aware, so AdamW is the
+optimizer for any sharded (FSDP) setup.
 
 `CombinedOptimizer` serializes in the standard flat layout, so checkpoint
-save/resume round-trips on a single GPU / DDP *and* through torch's
-distributed-checkpoint path under FSDP2. The remaining FSDP caveat is numerical,
-not serialization: `torch.optim.Muon` runs Newton-Schulz on whatever tensor it is
-handed, so on a sharded 2D weight the orthogonalization is per-shard and only
-correct if DTensor redistributes it. Validate Muon on multiple GPUs before
-trusting it; AdamW is the safe FSDP default.
-
-Relative to ablm-sweeps' `esm2/12_sota_convergence/training_mods/optimizers.py`
-(same lineage): this module has no `DistributedMuon`, which shards Newton-Schulz
-across the DDP group. Measured there: stock Muon +13.3% runtime vs AdamW,
-DistributedMuon +9.5%, and the two are bit-identical (max|diff| = 0.0). Porting it
-is a pure ~3.5% throughput win and is deliberately out of scope here.
+save/resume round-trips on a single GPU and under DDP.
 """
 
 from __future__ import annotations
@@ -34,7 +24,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 import torch
-from transformers import Trainer
+
+from .distributed_muon import DistributedMuon
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
@@ -45,7 +36,6 @@ __all__ = [
     "MUON_OPTIM",
     "MUON_PARAM_PREFIX",
     "CombinedOptimizer",
-    "OptimizerTrainer",
     "build_muon_optimizer",
     "split_muon_params",
 ]
@@ -195,15 +185,13 @@ def build_muon_optimizer(
     `muon_weight_decay` to decouple them.
 
     `decay_parameter_names` should be `Trainer.get_decay_parameter_names(model)`, so
-    the decay / no-decay split matches HF's convention exactly. When it is `None` the
-    fallback is `p.ndim >= 2`, which coincides for this architecture but is not the
-    same rule. `betas` / `eps` default to HF `TrainingArguments` defaults.
+    the decay / no-decay split matches HF's convention. When it is `None` the fallback
+    is `p.ndim >= 2`, which is exact for this architecture (every 2D param is a weight,
+    every 1D param a norm/bias) -- so callers can leave it `None`. `betas` / `eps`
+    default to HF `TrainingArguments` defaults.
 
-    Requires torch >= 2.11 (`torch.optim.Muon`).
+    Requires torch >= 2.11 (`DistributedMuon` reuses `torch.optim._muon` internals).
     """
-    if not hasattr(torch.optim, "Muon"):
-        raise RuntimeError("torch.optim.Muon is unavailable; 'muon' requires torch >= 2.11.")
-
     muon_params, adam_params, adam_names = split_muon_params(model)
     if decay_parameter_names is None:
         decay = [p for p in adam_params if p.ndim >= 2]
@@ -221,7 +209,8 @@ def build_muon_optimizer(
         # `d0/d` (`mup_adamw_lr_mult`). The input embedding is Theta(1) LR and is
         # excluded. `get_input_embeddings` (not `get_output_embeddings`, which is
         # `None` on classification/token heads) exists on every Ablm* head.
-        input_emb = model.get_input_embeddings().weight
+        # ty: model is typed nn.Module; get_input_embeddings is a PreTrainedModel method.
+        input_emb = model.get_input_embeddings().weight  # ty: ignore[call-non-callable]
         mup_params = [p for p in decay if p.ndim == 2 and p is not input_emb]
         decay = [p for p in decay if not (p.ndim == 2 and p is not input_emb)]
         mup_group = {
@@ -238,7 +227,7 @@ def build_muon_optimizer(
         adamw_groups.append(mup_group)
     return CombinedOptimizer(
         [
-            torch.optim.Muon(
+            DistributedMuon(
                 muon_params,
                 lr=lr,
                 weight_decay=weight_decay if muon_weight_decay is None else muon_weight_decay,
@@ -248,34 +237,3 @@ def build_muon_optimizer(
             torch.optim.AdamW(adamw_groups, lr=lr, betas=betas, eps=eps),
         ]
     )
-
-
-class OptimizerTrainer(Trainer):
-    """Stock `transformers.Trainer` plus an optional Muon optimizer.
-
-    With `use_muon=False` (the default) this is exactly the stock Trainer — every
-    HF-native optimizer flows through `TrainingArguments.optim` untouched. With
-    `use_muon=True`, `create_optimizer` builds Muon (+ aux AdamW) from the model after
-    it is placed / FSDP-sharded. Overriding `create_optimizer` is mandatory for FSDP:
-    HF rejects a pre-built `optimizers=` tuple once FSDP is on. No training loop is
-    overridden — `lr`/`weight_decay`/scheduler all still come from `TrainingArguments`.
-    """
-
-    def __init__(self, *args: Any, use_muon: bool = False, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        self._use_muon = use_muon
-
-    def create_optimizer(self, model: nn.Module | None = None) -> torch.optim.Optimizer:
-        if self.optimizer is not None or not self._use_muon:
-            return super().create_optimizer(model)
-        opt_model = model if model is not None else self.model
-        assert opt_model is not None, "OptimizerTrainer.create_optimizer needs a model"
-        self.optimizer = build_muon_optimizer(
-            opt_model,
-            lr=self.args.learning_rate,
-            weight_decay=self.args.weight_decay,
-            betas=(self.args.adam_beta1, self.args.adam_beta2),
-            eps=self.args.adam_epsilon,
-            decay_parameter_names=set(self.get_decay_parameter_names(opt_model)),
-        )
-        return self.optimizer

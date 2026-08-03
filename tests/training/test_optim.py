@@ -4,12 +4,10 @@ from __future__ import annotations
 
 import pytest
 import torch
-from transformers import TrainingArguments
 
 from ablm import AblmConfig, AblmForMaskedLM
 from ablm.training.optim import (
     CombinedOptimizer,
-    OptimizerTrainer,
     build_muon_optimizer,
     split_muon_params,
 )
@@ -187,22 +185,11 @@ def test_decay_parameter_names_control_the_adamw_split(tiny_model):
     assert no_decay["weight_decay"] == 0.0
 
 
-def test_optimizer_trainer_forwards_training_arguments_betas_and_eps(tiny_model, tmp_path):
-    # Non-default adam_beta2 / adam_epsilon: the bug this task fixes was
-    # OptimizerTrainer.create_optimizer silently dropping these onto build_muon_optimizer's
-    # hardcoded (0.9, 0.98) / 1e-8, so a value that happens to match either default couldn't
-    # catch a forwarding regression.
-    args = TrainingArguments(
-        output_dir=str(tmp_path),
-        max_steps=1,
-        per_device_train_batch_size=2,
-        learning_rate=1e-3,
-        adam_beta2=0.98,
-        adam_epsilon=1e-5,
-        report_to="none",
-    )
-    trainer = OptimizerTrainer(model=tiny_model, args=args, use_muon=True)
-    opt = trainer.create_optimizer()
+def test_build_muon_optimizer_applies_betas_and_eps(tiny_model):
+    # betas / eps flow to the AdamW child. Non-default values (not 0.999 / 1e-8) so a
+    # match with a default can't mask a forwarding regression. The training script passes
+    # these from TrainingArguments; build_muon_optimizer is the single wiring point.
+    opt = build_muon_optimizer(tiny_model, lr=1e-3, betas=(0.9, 0.98), eps=1e-5)
     for group in _adamw_child(opt).param_groups:
         assert group["betas"] == (0.9, 0.98)
         assert group["eps"] == 1e-5

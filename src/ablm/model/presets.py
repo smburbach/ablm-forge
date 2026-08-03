@@ -18,7 +18,6 @@ _PRESETS: dict[str, dict[str, int]] = {
     "150m": {"num_hidden_layers": 24, "hidden_size": 768},
     "300m": {"num_hidden_layers": 30, "hidden_size": 1024},
     "600m": {"num_hidden_layers": 36, "hidden_size": 1152},
-    "6b": {"num_hidden_layers": 80, "hidden_size": 2560},
 }
 
 PRESETS: tuple[str, ...] = tuple(_PRESETS)
