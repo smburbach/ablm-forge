@@ -58,10 +58,12 @@ class AblmPreTrainedModel(PreTrainedModel):
 
         if isinstance(module, nn.Linear):
             module_std = std
+            if self.config.mup_enabled:
+                module_std = std * math.sqrt(self.config.mup_base_hidden_size / module.in_features)
             if getattr(module, "_is_residual_writer", False) and (
                 self.config.init_scale_output_projections
             ):
-                module_std = std / math.sqrt(2 * self.config.num_hidden_layers)
+                module_std = module_std / math.sqrt(2 * self.config.num_hidden_layers)
             nn.init.trunc_normal_(
                 module.weight, mean=0.0, std=module_std, a=-2 * module_std, b=2 * module_std
             )
