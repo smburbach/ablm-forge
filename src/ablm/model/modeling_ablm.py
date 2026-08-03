@@ -220,6 +220,8 @@ class AblmForMaskedLM(AblmPreTrainedModel):
             return_dict=True,
         )
         logits = self.lm_head(outputs.last_hidden_state).float()
+        if self.config.mup_output_mult != 1.0:
+            logits = logits * self.config.mup_output_mult
 
         loss = None
         if labels is not None:

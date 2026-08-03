@@ -46,6 +46,7 @@ class AblmEmbedding(nn.Module):
         self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size)
         self.token_dropout = bool(getattr(config, "token_dropout", False))
         self.mask_token_id = getattr(config, "mask_token_id", None)
+        self.mup_emb_mult = float(getattr(config, "mup_emb_mult", 1.0))
         if config.post_embed_norm:
             self.post_norm: nn.Module = make_norm(
                 config.norm_type,
@@ -63,7 +64,10 @@ class AblmEmbedding(nn.Module):
         x = self.embed_tokens(input_ids)
         if self.token_dropout:
             x = self._apply_token_dropout(x, input_ids, attention_mask)
-        return self.post_norm(x)
+        embeddings = self.post_norm(x)
+        if self.mup_emb_mult != 1.0:
+            embeddings = embeddings * self.mup_emb_mult
+        return embeddings
 
     def _apply_token_dropout(
         self,
