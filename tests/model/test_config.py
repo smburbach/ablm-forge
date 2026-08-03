@@ -141,20 +141,9 @@ def test_rejects_negative_rope_dim():
         )
 
 
-@pytest.mark.parametrize(
-    "field,bad_value,expected_match",
-    [
-        ("norm_type", "zorm", "is not a valid NormType"),
-        ("norm_strategy", "preprost", "is not a valid NormStrategy"),
-        ("residual_scaling", "linear", "is not a valid ResidualScaling"),
-        ("ffn_activation", "relu", "is not a valid FfnActivation"),
-        ("mlm_head_activation", "swiglu", "is not a valid MlmHeadActivation"),
-        ("classifier_pool", "max", "is not a valid ClassifierPool"),
-    ],
-)
-def test_rejects_unknown_categorical_values(field, bad_value, expected_match):
-    with pytest.raises(ValueError, match=expected_match):
-        AblmConfig(**{field: bad_value})
+# Categorical fields are Literal-typed and validated where they are consumed, not at
+# AblmConfig construction — see the reject tests in test_norm.py (make_norm),
+# test_ffn.py (make_ffn), and test_transformer.py (the AblmBlock norm dispatch).
 
 
 def test_non_default_vocab_emits_warning():
@@ -231,6 +220,12 @@ def test_intermediate_size_derivation_is_variant_aware():
     assert mlp.intermediate_size == 3840
 
 
-def test_unknown_ffn_activation_raises_at_config_construction():
-    with pytest.raises(ValueError, match="is not a valid FfnActivation"):
-        AblmConfig(ffn_activation="not_a_variant")
+def test_unknown_categorical_value_is_accepted_by_config_and_caught_at_build():
+    # Construction does not validate categorical values; the consumer (here make_ffn,
+    # via building the model) is what raises on an unknown value.
+    cfg = AblmConfig(ffn_activation="not_a_variant")  # no raise at construction
+    assert cfg.ffn_activation == "not_a_variant"
+    from ablm import AblmForMaskedLM
+
+    with pytest.raises(ValueError, match="Unknown ffn_activation"):
+        AblmForMaskedLM(cfg)

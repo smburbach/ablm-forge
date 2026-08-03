@@ -191,10 +191,8 @@ def test_down_proj_is_marked_residual_writer_on_both_structures():
     assert make_ffn(_config(ffn_activation="gelu_mlp")).down_proj._is_residual_writer is True
 
 
-def test_every_ffn_activation_has_a_registry_entry():
-    """The FfnActivation enum is the single source of truth; every declared variant
-    must have a `_FFN_VARIANTS` implementation (else `make_ffn` would KeyError)."""
-    from ablm.model.config_types import FfnActivation
-    from ablm.model.layers.ffn import _FFN_VARIANTS
-
-    assert set(_FFN_VARIANTS) == set(FfnActivation)
+def test_make_ffn_rejects_unknown_activation():
+    """`_FFN_VARIANTS` is the single source of truth; make_ffn raises on any value
+    outside it (this is where an unknown `ffn_activation` is caught)."""
+    with pytest.raises(ValueError, match="Unknown ffn_activation"):
+        make_ffn(_config(ffn_activation="not_a_variant"))

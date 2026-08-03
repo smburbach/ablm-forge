@@ -20,7 +20,6 @@ from transformers.modeling_outputs import (
     TokenClassifierOutput,
 )
 
-from .config_types import ClassifierPool
 from .configuration_ablm import AblmConfig
 from .layers.embedding import cls_pool, mean_pool
 from .layers.norm import AblmLayerNorm, AblmRMSNorm, make_norm
@@ -293,11 +292,16 @@ class AblmForSequenceClassification(AblmPreTrainedModel):
         )
         last_hidden = outputs.last_hidden_state
 
-        if self.config.classifier_pool == ClassifierPool.CLS:
+        if self.config.classifier_pool == "cls":
             pooled = cls_pool(last_hidden)
-        else:
+        elif self.config.classifier_pool == "mean":
             pooled_mask = self._pooling_mask(attention_mask, last_hidden)
             pooled = mean_pool(last_hidden, pooled_mask)
+        else:
+            raise ValueError(
+                f"Unknown classifier_pool {self.config.classifier_pool!r}; "
+                "expected 'mean' or 'cls'."
+            )
 
         pooled = self.pre_head_norm(pooled)
         pooled = self.dropout(pooled)

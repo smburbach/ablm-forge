@@ -8,22 +8,21 @@ import torch
 from torch import nn
 from transformers.activations import ACT2FN
 
-from ..config_types import FfnActivation
-
 if TYPE_CHECKING:
     from ..configuration_ablm import AblmConfig
 
 __all__ = ["MLP", "GatedFFN", "make_ffn", "round_up_to"]
 
-# FfnActivation -> (structure, ACT2FN key). This registry is the single source of
-# truth for the FFN variants: the `FfnActivation` enum declares them and this maps
-# each to its implementation. Adding a gated variant is a line here + an enum member,
-# not a class: the gate activation is the only thing that differs.
-_FFN_VARIANTS: dict[FfnActivation, tuple[str, str]] = {
-    FfnActivation.SWIGLU: ("gated", "silu"),
-    FfnActivation.GEGLU: ("gated", "gelu"),
-    FfnActivation.REGLU: ("gated", "relu"),
-    FfnActivation.GELU_MLP: ("mlp", "gelu"),
+# ffn_activation -> (structure, ACT2FN key). This registry is the runtime source of
+# truth for the FFN variants (`make_ffn` validates against it). Adding a gated variant
+# is one line here + a value in AblmConfig's `ffn_activation` Literal (the Literal is
+# for tooling; ty and make_ffn catch any drift between the two). No new class needed:
+# the gate activation is the only thing that differs.
+_FFN_VARIANTS: dict[str, tuple[str, str]] = {
+    "swiglu": ("gated", "silu"),
+    "geglu": ("gated", "gelu"),
+    "reglu": ("gated", "relu"),
+    "gelu_mlp": ("mlp", "gelu"),
 }
 
 

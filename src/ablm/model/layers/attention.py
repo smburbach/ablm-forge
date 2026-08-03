@@ -17,7 +17,6 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from ..config_types import NormStrategy
 from .norm import make_norm
 from .rope import RotaryEmbedding
 
@@ -88,7 +87,7 @@ class AblmAttention(nn.Module):
             self.k_norm = nn.Identity()
 
         # Hybrid strategy ("QKV-norm") also norms V; every other strategy leaves V alone.
-        if config.norm_strategy == NormStrategy.HYBRID:
+        if config.norm_strategy == "hybrid":
             self.v_norm: nn.Module = make_norm(
                 config.norm_type, head_dim, eps=config.norm_eps, bias=norm_bias
             )

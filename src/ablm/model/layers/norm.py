@@ -7,8 +7,6 @@ from typing import TYPE_CHECKING
 import torch
 from torch import nn
 
-from ..config_types import NormType
-
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
@@ -95,7 +93,7 @@ class AblmRMSNorm(nn.Module):
 
 
 def make_norm(
-    norm_type: NormType | str,
+    norm_type: str,
     normalized_shape: int | Sequence[int],
     eps: float = 1e-6,
     bias: bool = True,
@@ -120,8 +118,8 @@ def make_norm(
     Raises:
         ValueError: If `norm_type` is not recognized.
     """
-    if norm_type == NormType.LAYERNORM:
+    if norm_type == "layernorm":
         return AblmLayerNorm(normalized_shape, eps=eps, bias=bias)
-    if norm_type == NormType.RMSNORM:
+    if norm_type == "rmsnorm":
         return AblmRMSNorm(normalized_shape, eps=eps)
-    raise ValueError(f"Unknown norm_type {norm_type!r}; expected one of {tuple(NormType)}.")
+    raise ValueError(f"Unknown norm_type {norm_type!r}; expected 'layernorm' or 'rmsnorm'.")

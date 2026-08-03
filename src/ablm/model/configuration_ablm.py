@@ -3,18 +3,10 @@
 from __future__ import annotations
 
 import warnings
-from typing import Any
+from typing import Any, Literal
 
 from transformers import PretrainedConfig
 
-from .config_types import (
-    ClassifierPool,
-    FfnActivation,
-    MlmHeadActivation,
-    NormStrategy,
-    NormType,
-    ResidualScaling,
-)
 from .layers.ffn import round_up_to
 
 __all__ = ["AblmConfig"]
@@ -27,8 +19,10 @@ class AblmConfig(PretrainedConfig):
     """Configuration for the ABLM family of encoder-only protein language models.
 
     Maps 1:1 to the `model:` block of the project YAML schema and to the
-    constructor kwargs of every `Ablm*` class. The field reference and
-    validation rules live in `_validate` below.
+    constructor kwargs of every `Ablm*` class. Numeric/shape rules are checked in
+    `_validate`; the categorical fields are `Literal`-typed and validated where
+    they are consumed (`make_norm`, `make_ffn`, and the `AblmBlock` norm dispatch),
+    which raise `ValueError` on an unknown value.
     """
 
     model_type = "ablm"
@@ -46,24 +40,24 @@ class AblmConfig(PretrainedConfig):
         rope_theta: float = 10000.0,
         rope_dim: int | None = None,
         nope_dim: int = 0,
-        norm_type: NormType | str = NormType.LAYERNORM,
+        norm_type: Literal["layernorm", "rmsnorm"] = "layernorm",
         norm_eps: float = 1e-6,
         norm_bias: bool = False,
-        norm_strategy: NormStrategy | str = NormStrategy.PRE,
+        norm_strategy: Literal["pre", "sandwich", "hybrid", "post_sdpa"] = "pre",
         qk_norm: bool = False,
         post_embed_norm: bool = False,
-        residual_scaling: ResidualScaling | str = ResidualScaling.NONE,
+        residual_scaling: Literal["sqrt_num_layers", "none"] = "none",
         init_scale_output_projections: bool = True,
-        ffn_activation: FfnActivation | str = FfnActivation.SWIGLU,
+        ffn_activation: Literal["swiglu", "geglu", "reglu", "gelu_mlp"] = "swiglu",
         ffn_bias: bool = False,
         token_dropout: bool = False,
         attention_bias: bool = False,
         attention_dropout: float = 0.0,
         hidden_dropout: float = 0.0,
         tie_word_embeddings: bool = False,
-        mlm_head_activation: MlmHeadActivation | str = MlmHeadActivation.GELU,
+        mlm_head_activation: Literal["gelu", "silu", "relu"] = "gelu",
         initializer_range: float = 0.02,
-        classifier_pool: ClassifierPool | str = ClassifierPool.MEAN,
+        classifier_pool: Literal["mean", "cls"] = "mean",
         classifier_dropout: float = 0.0,
         num_labels: int = 2,
         pre_head_norm: bool = False,
@@ -90,23 +84,23 @@ class AblmConfig(PretrainedConfig):
         self.rope_theta = float(rope_theta)
         self.rope_dim = rope_dim if rope_dim is None else int(rope_dim)
         self.nope_dim = int(nope_dim)
-        self.norm_type = NormType(norm_type)
+        self.norm_type = norm_type
         self.norm_eps = float(norm_eps)
         self.norm_bias = bool(norm_bias)
-        self.norm_strategy = NormStrategy(norm_strategy)
+        self.norm_strategy = norm_strategy
         self.qk_norm = bool(qk_norm)
         self.post_embed_norm = bool(post_embed_norm)
-        self.residual_scaling = ResidualScaling(residual_scaling)
+        self.residual_scaling = residual_scaling
         self.init_scale_output_projections = bool(init_scale_output_projections)
-        self.ffn_activation = FfnActivation(ffn_activation)
+        self.ffn_activation = ffn_activation
         self.ffn_bias = bool(ffn_bias)
         self.token_dropout = bool(token_dropout)
         self.attention_bias = bool(attention_bias)
         self.attention_dropout = float(attention_dropout)
         self.hidden_dropout = float(hidden_dropout)
-        self.mlm_head_activation = MlmHeadActivation(mlm_head_activation)
+        self.mlm_head_activation = mlm_head_activation
         self.initializer_range = float(initializer_range)
-        self.classifier_pool = ClassifierPool(classifier_pool)
+        self.classifier_pool = classifier_pool
         self.classifier_dropout = float(classifier_dropout)
         # `num_labels` is a property on PretrainedConfig that derives from
         # `id2label` (set in super().__init__). Forward it via kwargs below
@@ -152,7 +146,7 @@ class AblmConfig(PretrainedConfig):
             self.head_dim = self.hidden_size // self.num_attention_heads
 
         if self.intermediate_size is None:
-            if self.ffn_activation == FfnActivation.GELU_MLP:
+            if self.ffn_activation == "gelu_mlp":
                 # Non-gated MLP (2 matrices): the classic 4x expansion.
                 self.intermediate_size = round_up_to(4 * self.hidden_size, 256)
             else:
@@ -208,10 +202,10 @@ class AblmConfig(PretrainedConfig):
                 f"got {self.rope_dim}."
             )
 
-        # The categorical fields (norm_type, norm_strategy, residual_scaling,
-        # ffn_activation, mlm_head_activation, classifier_pool) validate themselves:
-        # `__init__` coerces each through its StrEnum, which raises ValueError on an
-        # unknown value. See `config_types.py`.
+        # Categorical fields (norm_type, norm_strategy, residual_scaling,
+        # ffn_activation, mlm_head_activation, classifier_pool) are Literal-typed and
+        # validated at the point of use (make_norm / make_ffn / the AblmBlock norm
+        # dispatch raise on an unknown value), not here.
 
         if self.vocab_size != _DEFAULT_VOCAB_SIZE:
             warnings.warn(
