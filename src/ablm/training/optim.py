@@ -213,10 +213,23 @@ def build_muon_optimizer(
         decay = [p for n, p in pairs if n in decay_parameter_names]
         no_decay = [p for n, p in pairs if n not in decay_parameter_names]
 
+    cfg = getattr(model, "config", None)
+    readout_group = None
+    if cfg is not None and getattr(cfg, "mup_enabled", False):
+        readout = model.get_output_embeddings().weight
+        decay = [p for p in decay if p is not readout]
+        readout_group = {
+            "params": [readout],
+            "weight_decay": weight_decay,
+            "lr": lr * cfg.mup_readout_lr_mult,
+        }
+
     adamw_groups = [
         {"params": decay, "weight_decay": weight_decay},
         {"params": no_decay, "weight_decay": 0.0},
     ]
+    if readout_group is not None:
+        adamw_groups.append(readout_group)
     return CombinedOptimizer(
         [
             torch.optim.Muon(
