@@ -16,7 +16,7 @@ from .masking import prepare_attention_mask
 from .norm import make_norm
 
 if TYPE_CHECKING:
-    from .configuration_ablm import AblmConfig
+    from ..configuration_ablm import AblmConfig
 
 __all__ = ["AblmBlock", "AblmStack"]
 

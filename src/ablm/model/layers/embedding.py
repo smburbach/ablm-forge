@@ -10,7 +10,7 @@ from torch import nn
 from .norm import make_norm
 
 if TYPE_CHECKING:
-    from .configuration_ablm import AblmConfig
+    from ..configuration_ablm import AblmConfig
 
 __all__ = ["AblmEmbedding", "mean_pool", "cls_pool"]
 

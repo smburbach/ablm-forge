@@ -9,7 +9,7 @@ from torch import nn
 from transformers.activations import ACT2FN
 
 if TYPE_CHECKING:
-    from .configuration_ablm import AblmConfig
+    from ..configuration_ablm import AblmConfig
 
 __all__ = ["MLP", "GatedFFN", "make_ffn", "round_up_to"]
 
