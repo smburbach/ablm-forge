@@ -44,10 +44,7 @@ _COMBOS = list(
 
 def _combo_id(combo) -> str:
     norm_type, strat, rope_dim, qk, resid, tie, post = combo
-    return (
-        f"{norm_type}-{strat}-rope{rope_dim}-"
-        f"qk{int(qk)}-{resid}-tie{int(tie)}-pe{int(post)}"
-    )
+    return f"{norm_type}-{strat}-rope{rope_dim}-qk{int(qk)}-{resid}-tie{int(tie)}-pe{int(post)}"
 
 
 @pytest.mark.parametrize("combo", _COMBOS, ids=[_combo_id(c) for c in _COMBOS])

@@ -1,11 +1,11 @@
-"""Tests for `ablm.model.norm` — AblmLayerNorm, AblmRMSNorm, make_norm."""
+"""Tests for `ablm.model.layers.norm` — AblmLayerNorm, AblmRMSNorm, make_norm."""
 
 from __future__ import annotations
 
 import pytest
 import torch
 
-from ablm.model.norm import AblmLayerNorm, AblmRMSNorm, make_norm
+from ablm.model.layers.norm import AblmLayerNorm, AblmRMSNorm, make_norm
 
 # ---------------------------------------------------------------------------
 # AblmLayerNorm

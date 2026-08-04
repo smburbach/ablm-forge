@@ -1,4 +1,4 @@
-"""Tests for `ablm.model.transformer` — AblmBlock and AblmStack."""
+"""Tests for `ablm.model.layers.transformer` — AblmBlock and AblmStack."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ from types import SimpleNamespace
 import pytest
 import torch
 
-from ablm.model.norm import AblmLayerNorm
-from ablm.model.transformer import AblmBlock, AblmStack
+from ablm.model.layers.norm import AblmLayerNorm
+from ablm.model.layers.transformer import AblmBlock, AblmStack
 
 
 def _config(
@@ -27,6 +27,7 @@ def _config(
     norm_eps: float = 1e-6,
     norm_strategy: str = "pre",
     qk_norm: bool = True,
+    attention_bias: bool = False,
     ffn_activation: str = "swiglu",
     ffn_bias: bool = False,
     attention_dropout: float = 0.0,
@@ -51,6 +52,7 @@ def _config(
         norm_eps=norm_eps,
         norm_strategy=norm_strategy,
         qk_norm=qk_norm,
+        attention_bias=attention_bias,
         ffn_activation=ffn_activation,
         ffn_bias=ffn_bias,
         attention_dropout=attention_dropout,

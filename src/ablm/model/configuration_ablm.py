@@ -2,32 +2,23 @@
 
 from __future__ import annotations
 
-import warnings
-from typing import Any
+from typing import Any, Literal
 
 from transformers import PretrainedConfig
 
-from .ffn import round_up_to
+from .layers.ffn import round_up_to
 
 __all__ = ["AblmConfig"]
-
-
-_VALID_NORM_TYPES = ("layernorm", "rmsnorm")
-_VALID_NORM_STRATEGIES = ("pre", "sandwich", "hybrid", "post_sdpa")
-_VALID_RESIDUAL_SCALINGS = ("sqrt_num_layers", "none")
-_VALID_FFN_ACTIVATIONS = ("swiglu",)
-_VALID_MLM_HEAD_ACTIVATIONS = ("gelu", "silu", "relu")
-_VALID_CLASSIFIER_POOLS = ("mean", "cls")
-
-_DEFAULT_VOCAB_SIZE = 33
 
 
 class AblmConfig(PretrainedConfig):
     """Configuration for the ABLM family of encoder-only protein language models.
 
     Maps 1:1 to the `model:` block of the project YAML schema and to the
-    constructor kwargs of every `Ablm*` class. The field reference and
-    validation rules live in `_validate` below.
+    constructor kwargs of every `Ablm*` class. Numeric/shape rules are checked in
+    `_validate`; the categorical fields are `Literal`-typed and validated where
+    they are consumed (`make_norm`, `make_ffn`, and the `AblmBlock` norm dispatch),
+    which raise `ValueError` on an unknown value.
     """
 
     model_type = "ablm"
@@ -35,7 +26,7 @@ class AblmConfig(PretrainedConfig):
     def __init__(
         self,
         *,
-        vocab_size: int = _DEFAULT_VOCAB_SIZE,
+        vocab_size: int = 33,
         hidden_size: int = 768,
         num_hidden_layers: int = 12,
         num_attention_heads: int = 12,
@@ -45,23 +36,24 @@ class AblmConfig(PretrainedConfig):
         rope_theta: float = 10000.0,
         rope_dim: int | None = None,
         nope_dim: int = 0,
-        norm_type: str = "layernorm",
+        norm_type: Literal["layernorm", "rmsnorm"] = "layernorm",
         norm_eps: float = 1e-6,
         norm_bias: bool = False,
-        norm_strategy: str = "pre",
+        norm_strategy: Literal["pre", "sandwich", "hybrid", "post_sdpa"] = "pre",
         qk_norm: bool = False,
         post_embed_norm: bool = False,
-        residual_scaling: str = "none",
+        residual_scaling: Literal["sqrt_num_layers", "none"] = "none",
         init_scale_output_projections: bool = True,
-        ffn_activation: str = "swiglu",
+        ffn_activation: Literal["swiglu", "geglu", "reglu", "gelu"] = "swiglu",
         ffn_bias: bool = False,
         token_dropout: bool = False,
+        attention_bias: bool = False,
         attention_dropout: float = 0.0,
         hidden_dropout: float = 0.0,
         tie_word_embeddings: bool = False,
-        mlm_head_activation: str = "gelu",
+        mlm_head_activation: Literal["gelu", "silu", "relu"] = "gelu",
         initializer_range: float = 0.02,
-        classifier_pool: str = "mean",
+        classifier_pool: Literal["mean", "cls"] = "mean",
         classifier_dropout: float = 0.0,
         num_labels: int = 2,
         pre_head_norm: bool = False,
@@ -71,6 +63,9 @@ class AblmConfig(PretrainedConfig):
         eos_token_id: int = 2,
         unk_token_id: int = 3,
         mask_token_id: int = 32,
+        mup_enabled: bool = False,
+        mup_base_hidden_size: int | None = None,
+        mup_emb_mult: float = 1.0,
         **kwargs: Any,
     ) -> None:
         self.vocab_size = int(vocab_size)
@@ -96,6 +91,7 @@ class AblmConfig(PretrainedConfig):
         self.ffn_activation = ffn_activation
         self.ffn_bias = bool(ffn_bias)
         self.token_dropout = bool(token_dropout)
+        self.attention_bias = bool(attention_bias)
         self.attention_dropout = float(attention_dropout)
         self.hidden_dropout = float(hidden_dropout)
         self.mlm_head_activation = mlm_head_activation
@@ -109,6 +105,11 @@ class AblmConfig(PretrainedConfig):
         self.gradient_checkpointing = bool(gradient_checkpointing)
         self.unk_token_id = int(unk_token_id)
         self.mask_token_id = int(mask_token_id)
+        self.mup_enabled = bool(mup_enabled)
+        self.mup_base_hidden_size = (
+            mup_base_hidden_size if mup_base_hidden_size is None else int(mup_base_hidden_size)
+        )
+        self.mup_emb_mult = float(mup_emb_mult)
 
         self._resolve_derived_fields()
         self._validate()
@@ -126,6 +127,9 @@ class AblmConfig(PretrainedConfig):
             **kwargs,
         )
 
+        if self.mup_enabled and self.tie_word_embeddings:
+            raise ValueError("mup_enabled requires untied embeddings (tie_word_embeddings=False).")
+
     # ------------------------------------------------------------------
     # Derived-field resolution
     # ------------------------------------------------------------------
@@ -138,13 +142,27 @@ class AblmConfig(PretrainedConfig):
             self.head_dim = self.hidden_size // self.num_attention_heads
 
         if self.intermediate_size is None:
-            # SwiGLU convention: ~8/3 * D rounded up to a tensor-core friendly 256.
-            self.intermediate_size = round_up_to(int(8 * self.hidden_size / 3), 256)
+            if self.ffn_activation == "gelu":
+                # Non-gated MLP (2 matrices): the classic 4x expansion.
+                self.intermediate_size = round_up_to(4 * self.hidden_size, 256)
+            else:
+                # Gated (3 matrices): ~8/3 * D keeps params matched to a 4x MLP.
+                self.intermediate_size = round_up_to(int(8 * self.hidden_size / 3), 256)
 
         if self.rope_dim is None:
             # Default to full RoPE on every head channel.
             self.rope_dim = self.head_dim
             self.nope_dim = 0
+
+        if self.mup_enabled and self.mup_base_hidden_size:
+            ratio = self.mup_base_hidden_size / self.hidden_size
+            self.mup_output_mult = ratio
+            # Scales every hidden AdamW 2D weight (readout, MLM-head dense, classifier)
+            # except the input embedding -- see `build_muon_optimizer`.
+            self.mup_adamw_lr_mult = ratio
+        else:
+            self.mup_output_mult = 1.0
+            self.mup_adamw_lr_mult = 1.0
 
     # ------------------------------------------------------------------
     # Validation
@@ -180,40 +198,23 @@ class AblmConfig(PretrainedConfig):
                 f"got {self.rope_dim}."
             )
 
-        if self.norm_type not in _VALID_NORM_TYPES:
-            raise ValueError(
-                f"norm_type must be one of {_VALID_NORM_TYPES}; got {self.norm_type!r}."
-            )
-        if self.norm_strategy not in _VALID_NORM_STRATEGIES:
-            raise ValueError(
-                f"norm_strategy must be one of {_VALID_NORM_STRATEGIES}; "
-                f"got {self.norm_strategy!r}."
-            )
-        if self.residual_scaling not in _VALID_RESIDUAL_SCALINGS:
-            raise ValueError(
-                f"residual_scaling must be one of {_VALID_RESIDUAL_SCALINGS}; "
-                f"got {self.residual_scaling!r}."
-            )
-        if self.ffn_activation not in _VALID_FFN_ACTIVATIONS:
-            raise ValueError(
-                f"ffn_activation must be one of {_VALID_FFN_ACTIVATIONS}; "
-                f"got {self.ffn_activation!r}."
-            )
-        if self.mlm_head_activation not in _VALID_MLM_HEAD_ACTIVATIONS:
-            raise ValueError(
-                f"mlm_head_activation must be one of {_VALID_MLM_HEAD_ACTIVATIONS}; "
-                f"got {self.mlm_head_activation!r}."
-            )
-        if self.classifier_pool not in _VALID_CLASSIFIER_POOLS:
-            raise ValueError(
-                f"classifier_pool must be one of {_VALID_CLASSIFIER_POOLS}; "
-                f"got {self.classifier_pool!r}."
-            )
+        # Categorical fields (norm_type, norm_strategy, residual_scaling,
+        # ffn_activation, mlm_head_activation, classifier_pool) are Literal-typed and
+        # validated at the point of use (make_norm / make_ffn / the AblmBlock norm
+        # dispatch raise on an unknown value), not here.
 
-        if self.vocab_size != _DEFAULT_VOCAB_SIZE:
-            warnings.warn(
-                f"vocab_size={self.vocab_size} differs from the ABLM default "
-                f"({_DEFAULT_VOCAB_SIZE}); custom vocabularies are not yet supported.",
-                UserWarning,
-                stacklevel=3,
-            )
+        if self.mup_enabled and (
+            self.mup_base_hidden_size is None or self.mup_base_hidden_size <= 0
+        ):
+            raise ValueError("mup_enabled requires mup_base_hidden_size > 0.")
+
+    # ------------------------------------------------------------------
+    # Presets
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def from_preset(cls, name: str, **overrides) -> AblmConfig:
+        """Return the named default preset (see :mod:`ablm.model.presets`)."""
+        from .presets import from_preset
+
+        return from_preset(name, **overrides)

@@ -2,10 +2,15 @@
 
 Lab base model-architecture repo for antibody/protein language-model
 experiments. An ESM-style bidirectional encoder wired to the stock HuggingFace
-`Trainer`, launched via `torchrun` + FSDP2, with SDPA-based attention and an
-optional Muon optimizer. It is a **library, not a framework**: no config system,
-no CLI — you compose the pieces in a training script (`scripts/pretrain.py` is
-the example).
+`Trainer`, launched via `accelerate --multi_gpu` (DDP), with SDPA-based attention and Muon
+as the recommended production optimizer. It is a **library, not a framework**:
+no config system, no CLI — you compose the pieces in a training script
+(`scripts/pretrain.py` is the example).
+
+Muon is the recommended optimizer for production runs: on a 350M AbLM it reached
+lower eval loss than AdamW reproducibly (the largest single architectural effect
+measured, -0.0058 eval/loss) and is LR-robust where AdamW degrades above ~1e-4.
+AdamW remains the default for iteration.
 
 This file is the single source of truth for agent and contributor instructions.
 Make all future updates here, not in `CLAUDE.md` (which points back to this file).
@@ -34,43 +39,63 @@ ty check src/                          # ty (Astral), not mypy; must be clean
 
 The default config tracks **ESM-C** (EvolutionaryScale Cambrian): Pre-LN, full
 RoPE, SwiGLU, **bias-free** linear layers and layer norms (`norm_bias=false`,
-`ffn_bias=false`), **no QK-norm**, **no residual scaling**, and **no token
-dropout** (`token_dropout=false` — ESM-2 had it; ESM-C removed it as redundant
-under Pre-LN. The ESM-2 behavior is implemented and available via
-`token_dropout=true`). ESM-C sizes are head_dim-64 at 30L/960, 36L/1152,
-80L/2560 (300M / 600M / 6B) — set them directly on `AblmConfig`. The tokenizer is
-bit-for-bit ESM-C (33-token vocab). Tests `tests/model/test_esm_alignment.py` pin
-this alignment — keep them green when touching defaults. The architecture is a
-superset: `qk_norm`,
-`residual_scaling`, `norm_strategy`, partial RoPE, and `token_dropout` are opt-in
-knobs for experiments. (Exact ESM-2 parity would additionally need a plain GELU
-MLP FFN, which is not yet implemented — only SwiGLU is.)
+`ffn_bias=false`, `attention_bias=false`), **no QK-norm**, **no residual
+scaling**, and **no token dropout** (`token_dropout=false` — ESM-2 had it; ESM-C
+removed it as redundant under Pre-LN. The ESM-2 behavior is implemented and
+available via `token_dropout=true`). ESM-C sizes are head_dim-64 at 30L/960,
+36L/1152, 80L/2560 (300M / 600M / 6B) — set them directly on `AblmConfig`. The
+tokenizer is bit-for-bit ESM-C (33-token vocab). Tests
+`tests/model/test_esm_alignment.py` pin this alignment — keep them green when
+touching defaults. The architecture is a superset: `qk_norm`, `residual_scaling`,
+`norm_strategy`, partial RoPE, `token_dropout`, and `attention_bias` are opt-in
+knobs for experiments. FFN variants are `swiglu` / `geglu` / `reglu` (gated, 3
+matrices, gate activation from `ACT2FN`) and `gelu` (non-gated, 2 matrices,
+ESM-2 style). Add a gated variant by adding a `_FFN_VARIANTS` entry in `ffn.py`
+(the runtime source of truth, checked by `make_ffn`) plus a value in `AblmConfig`'s
+`ffn_activation` `Literal` — no new class needed. The categorical config fields
+(norm/ffn/pool/etc.) are `Literal`-typed on `AblmConfig` and validated where they're
+consumed (`make_norm`, `make_ffn`, the `AblmBlock` norm dispatch) — no separate
+upfront allow-list. When `intermediate_size` is left `None` the
+derivation is variant-aware: 4x hidden for `gelu`, ~8/3 x hidden for the
+gated variants.
 
 > Attention is just `F.scaled_dot_product_attention`, which auto-selects the
 > fastest fused backend (FlashAttention / cuDNN / mem-efficient) at runtime — no
 > kernel registry, no torch.compile needed. A manual fp32-softmax path runs only
 > for `output_attentions=True` (SDPA can't return weights).
 
+- **Default presets** live in `model/presets.py` (`from_preset("300m")`,
+  `AblmConfig.from_preset(...)`): a muP-correct, kernel-optimized ladder
+  (35m/150m/300m/600m, d0=512). muP is opt-in (`mup_enabled`), so non-preset
+  configs are unaffected.
+
 ## Core design rules (do not violate)
 
 - **No config system, no CLI.** Configuration lives in Python: `AblmConfig`
   (a `PretrainedConfig`) for the model, `transformers.TrainingArguments` for
   training, composed in a script (`scripts/pretrain.py`). Don't add OmegaConf /
-  YAML config trees / a `train` CLI / presets.
-- **No custom trainer loop; subclass `Trainer` only to build Muon.** Use stock
+  YAML config trees / a `train` CLI. The in-code muP preset ladder in
+  `model/presets.py` (see above) is the sanctioned exception — a plain Python
+  registry, not a config system; don't add external/YAML preset files.
+- **No custom trainer loop; compose the stock `Trainer` in the script.** Use stock
   `transformers.Trainer`. HF-native optimizers via `TrainingArguments.optim`;
-  schedules via `lr_scheduler_type`. The *one* sanctioned subclass is
-  `OptimizerTrainer`, which overrides only `create_optimizer` to build Muon — this
-  is mandatory, not stylistic: HF forbids a pre-built `optimizers=` tuple once FSDP
-  is enabled, and `optimizer_cls_and_kwargs` can't express the name-based
-  Muon/AdamW split. Don't override `training_step`/`compute_loss`/the loop, and
-  don't add other subclasses.
-- **Attention is SDPA + a manual fallback** in `ablm/model/attention.py`. Don't
-  reintroduce a kernel registry / explicit flash-attn integration: SDPA already
-  auto-selects the fused backend. (Keep attention in one file, not a subpackage —
-  HF copies only depth-1 relative imports for `trust_remote_code`.)
-- **All public model classes in `modeling_ablm.py`** for the same
-  `trust_remote_code` reason; internal blocks live in their own modules.
+  schedules via `lr_scheduler_type`. Muon is built in the script with
+  `build_muon_optimizer(model, ...)` and handed over via `optimizers=(opt, None)` —
+  no `Trainer` subclass. Everything else composes as constructor args / callbacks
+  (`data_collator=`, `compute_metrics=`, `callbacks=`); the one exception is
+  `RegionEvalMixin`, mixed into a Trainer subclass only when you need per-region
+  eval. Don't override `training_step`/`compute_loss`/the loop.
+- **Attention is SDPA + a manual fallback** in `ablm/model/layers/attention.py`.
+  Don't reintroduce a kernel registry / explicit flash-attn integration: SDPA
+  already auto-selects the fused backend.
+- **All public model classes in `modeling_ablm.py`** (standard HF convention);
+  the architecture building blocks live in the `model/layers/` subpackage.
+- **Loading is register-based** (BALM-style): `import ablm` registers the classes
+  with the Auto* factories, so checkpoints reload via `AutoModel*.from_pretrained`
+  **with ablm-forge installed** — no `register_for_auto_class` / `auto_map` /
+  `trust_remote_code`. That's what lets the model package use subpackages; don't
+  reintroduce the file-copy path (it forces a flat package and can't follow
+  subpackage-relative imports).
 - **MoE is out of scope.** Do not reintroduce it.
 
 ## Architecture
@@ -84,12 +109,13 @@ MLP FFN, which is not yet implemented — only SwiGLU is.)
 ```
 src/ablm/
 ├── model/
-│   ├── outputs.py norm.py masking.py rope.py embedding.py ffn.py
-│   ├── attention.py            # AblmAttention: SDPA + manual-softmax fallback
-│   ├── transformer.py          # AblmBlock + AblmStack (FSDP wrap unit: AblmBlock)
 │   ├── configuration_ablm.py   # AblmConfig
 │   ├── tokenization_ablm.py    # AblmTokenizerFast (33-token ESM-C vocab)
-│   └── modeling_ablm.py        # all public Ablm* model classes
+│   ├── modeling_ablm.py        # all public Ablm* model classes
+│   └── layers/                 # architecture building blocks (the screen surface)
+│       ├── norm.py masking.py rope.py embedding.py ffn.py
+│       ├── attention.py        # AblmAttention: SDPA + manual-softmax fallback
+│       └── transformer.py      # AblmBlock + AblmStack
 └── training/
     └── optim.py                # Muon CombinedOptimizer + build_muon_optimizer
 scripts/pretrain.py             # example training script: data loading + Trainer wiring
@@ -109,9 +135,9 @@ There's no entry point in the package — copy/edit `scripts/pretrain.py`:
 ```bash
 # single GPU
 python scripts/pretrain.py --data train.parquet --output-dir out
-# multi-GPU + FSDP2
-torchrun --standalone --nproc_per_node=8 scripts/pretrain.py \
-    --data train/ --output-dir out --fsdp --bf16 --gradient-checkpointing
+# multi-GPU (DDP)
+accelerate launch --multi_gpu --mixed_precision bf16 scripts/pretrain.py \
+    --data train/ --output-dir out --bf16 --gradient-checkpointing
 ```
 
 ## Code Style
@@ -125,10 +151,10 @@ torchrun --standalone --nproc_per_node=8 scripts/pretrain.py \
 - Mirror source layout. `pytest.fixture` for setup, `@pytest.mark.parametrize`
   for input variation, `@pytest.mark.slow` for multi-step / GPU runs.
 - Prefer real data (the parquet fixture under `tests/fixtures/training/`).
-- The pilot suite (`tests/training/test_pilot_train.py`,
-  `test_pilot_fsdp.py`) trains a tiny model end-to-end by composing the Trainer
-  directly (the `scripts/pretrain.py` flow); `test_pilot_fsdp.py` runs the script
-  under torchrun. Keep these green — they prove the HF-Trainer + FSDP2 wiring.
+- The pilot suite (`tests/training/test_pilot_train.py`) trains a tiny model
+  end-to-end for both the AdamW and Muon (`optimizers=`) arms, including
+  checkpoint save + resume — it proves the stock-`Trainer` + `build_muon_optimizer`
+  wiring (the `scripts/pretrain.py` flow). Keep it green.
 
 ## What Not To Do
 

@@ -1,26 +1,22 @@
 """Muon optimizer (2D transformer-body weights) + AdamW (everything else).
 
 HF-native optimizers are selected directly via `TrainingArguments.optim`. Muon is
-the one HF doesn't ship: `build_muon_optimizer` wraps `torch.optim.Muon` (on the
-2D attention/MLP weights) and `torch.optim.AdamW` (embeddings, LM head, norms,
-biases) in a single `CombinedOptimizer`.
+the one HF doesn't ship: `build_muon_optimizer` splits the model by name and wraps
+`DistributedMuon` (on the 2D attention/MLP body weights) and `torch.optim.AdamW`
+(embeddings, LM head, norms, biases, and the muP-scaled hidden AdamW matrices) in a
+single `CombinedOptimizer`. Build it in the training script and hand it to the stock
+`Trainer` via `optimizers=(opt, None)` -- no `Trainer` subclass; the LR scheduler
+still comes from `TrainingArguments`.
 
-`OptimizerTrainer` is a thin `Trainer` subclass that overrides only
-`create_optimizer` to build Muon. The subclass is required, not a preference: HF
-*forbids* passing a pre-built `optimizers=` tuple once FSDP is enabled
-("Passing `optimizers` is not allowed if PyTorch FSDP is enabled. You should
-subclass `Trainer` and override ...") and `optimizer_cls_and_kwargs` can't express
-the name-based Muon/AdamW split (HF hands it grouped tensors, not names). The
-override builds the optimizer *after* the model is FSDP-sharded. With Muon off it
-is exactly the stock Trainer; there is no custom training loop.
+`DistributedMuon` (see `distributed_muon.py`) shards the Newton-Schulz
+orthogonalization across the DDP group -- each rank orthogonalizes only its slice
+and the results are gathered back -- numerically identical to `torch.optim.Muon` but
+without the redundant per-rank compute. It assumes DDP (replicated params), which is
+how forge trains (`accelerate --multi_gpu`); it is not FSDP-aware, so AdamW is the
+optimizer for any sharded (FSDP) setup.
 
 `CombinedOptimizer` serializes in the standard flat layout, so checkpoint
-save/resume round-trips on a single GPU / DDP *and* through torch's
-distributed-checkpoint path under FSDP2. The remaining FSDP caveat is numerical,
-not serialization: `torch.optim.Muon` runs Newton-Schulz on whatever tensor it is
-handed, so on a sharded 2D weight the orthogonalization is per-shard and only
-correct if DTensor redistributes it. Validate Muon on multiple GPUs before
-trusting it; AdamW is the safe FSDP default.
+save/resume round-trips on a single GPU and under DDP.
 """
 
 from __future__ import annotations
@@ -28,7 +24,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 import torch
-from transformers import Trainer
+
+from .distributed_muon import DistributedMuon
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
@@ -39,7 +36,6 @@ __all__ = [
     "MUON_OPTIM",
     "MUON_PARAM_PREFIX",
     "CombinedOptimizer",
-    "OptimizerTrainer",
     "build_muon_optimizer",
     "split_muon_params",
 ]
@@ -53,16 +49,20 @@ MUON_OPTIM = "muon"
 MUON_PARAM_PREFIX = "ablm.backbone.layers."
 
 
-def split_muon_params(model: nn.Module) -> tuple[list[nn.Parameter], list[nn.Parameter]]:
-    """Partition trainable params into ``(muon_params, adam_params)``.
+def split_muon_params(
+    model: nn.Module,
+) -> tuple[list[nn.Parameter], list[nn.Parameter], list[str]]:
+    """Partition trainable params into ``(muon_params, adam_params, adam_names)``.
 
     Muon gets the 2D transformer-body weights (name under `MUON_PARAM_PREFIX`);
-    everything else (embeddings, LM head, norms, biases) goes to AdamW. Asserts the
-    split is exhaustive and that no embedding / LM-head weight leaks into Muon, so a
-    module rename fails loudly.
+    everything else (embeddings, LM head, norms, biases) goes to AdamW. `adam_names`
+    is positionally aligned with `adam_params` so callers can apply HF's name-based
+    weight-decay rule. Asserts the split is exhaustive and that no embedding /
+    LM-head weight leaks into Muon, so a module rename fails loudly.
     """
     muon_params: list[nn.Parameter] = []
     adam_params: list[nn.Parameter] = []
+    adam_names: list[str] = []
     for name, p in model.named_parameters():
         if not p.requires_grad:
             continue
@@ -73,9 +73,10 @@ def split_muon_params(model: nn.Module) -> tuple[list[nn.Parameter], list[nn.Par
             muon_params.append(p)
         else:
             adam_params.append(p)
+            adam_names.append(name)
 
     assert muon_params, "Muon group is empty -- did the transformer-body module names change?"
-    return muon_params, adam_params
+    return muon_params, adam_params, adam_names
 
 
 class CombinedOptimizer(torch.optim.Optimizer):
@@ -169,67 +170,70 @@ def build_muon_optimizer(
     *,
     lr: float,
     weight_decay: float = 0.0,
-    betas: tuple[float, float] = (0.9, 0.98),
+    betas: tuple[float, float] = (0.9, 0.999),
     eps: float = 1e-8,
     momentum: float = 0.95,
     adjust_lr_fn: str | None = "match_rms_adamw",
+    muon_weight_decay: float | None = None,
+    decay_parameter_names: set[str] | None = None,
 ) -> CombinedOptimizer:
     """Build Muon (2D body weights) + AdamW (everything else) as one optimizer.
 
     `adjust_lr_fn="match_rms_adamw"` rescales the Muon update to AdamW's RMS
-    (Moonshot 2025), so AdamW's tuned `lr` / `weight_decay` transfer to Muon. AdamW
-    decays only the 2D weights (embeddings, LM head); norms and biases are excluded,
-    matching the HF/ESM convention. Requires torch >= 2.11 (`torch.optim.Muon`).
-    """
-    if not hasattr(torch.optim, "Muon"):
-        raise RuntimeError("torch.optim.Muon is unavailable; 'muon' requires torch >= 2.11.")
+    (Moonshot 2025), so AdamW's tuned `lr` / `weight_decay` transfer to Muon --
+    which is why `weight_decay` applies to BOTH children by default. Pass
+    `muon_weight_decay` to decouple them.
 
-    muon_params, adam_params = split_muon_params(model)
-    decay = [p for p in adam_params if p.ndim >= 2]
-    no_decay = [p for p in adam_params if p.ndim < 2]
+    `decay_parameter_names` should be `Trainer.get_decay_parameter_names(model)`, so
+    the decay / no-decay split matches HF's convention. When it is `None` the fallback
+    is `p.ndim >= 2`, which is exact for this architecture (every 2D param is a weight,
+    every 1D param a norm/bias) -- so callers can leave it `None`. `betas` / `eps`
+    default to HF `TrainingArguments` defaults.
+
+    Requires torch >= 2.11 (`DistributedMuon` reuses `torch.optim._muon` internals).
+    """
+    muon_params, adam_params, adam_names = split_muon_params(model)
+    if decay_parameter_names is None:
+        decay = [p for p in adam_params if p.ndim >= 2]
+        no_decay = [p for p in adam_params if p.ndim < 2]
+    else:
+        pairs = list(zip(adam_names, adam_params, strict=True))
+        decay = [p for n, p in pairs if n in decay_parameter_names]
+        no_decay = [p for n, p in pairs if n not in decay_parameter_names]
+
+    cfg = getattr(model, "config", None)
+    mup_group = None
+    if cfg is not None and getattr(cfg, "mup_enabled", False):
+        # muP: every hidden AdamW 2D weight (readout, MLM-head dense, classifier, ...)
+        # has fan_in proportional to width and needs Adam LR ~ 1/d, scaled here by
+        # `d0/d` (`mup_adamw_lr_mult`). The input embedding is Theta(1) LR and is
+        # excluded. `get_input_embeddings` (not `get_output_embeddings`, which is
+        # `None` on classification/token heads) exists on every Ablm* head.
+        # ty: model is typed nn.Module; get_input_embeddings is a PreTrainedModel method.
+        input_emb = model.get_input_embeddings().weight  # ty: ignore[call-non-callable]
+        mup_params = [p for p in decay if p.ndim == 2 and p is not input_emb]
+        decay = [p for p in decay if not (p.ndim == 2 and p is not input_emb)]
+        mup_group = {
+            "params": mup_params,
+            "weight_decay": weight_decay,
+            "lr": lr * cfg.mup_adamw_lr_mult,
+        }
+
+    adamw_groups = [
+        {"params": decay, "weight_decay": weight_decay},
+        {"params": no_decay, "weight_decay": 0.0},
+    ]
+    if mup_group is not None:
+        adamw_groups.append(mup_group)
     return CombinedOptimizer(
         [
-            torch.optim.Muon(
+            DistributedMuon(
                 muon_params,
                 lr=lr,
-                weight_decay=weight_decay,
+                weight_decay=weight_decay if muon_weight_decay is None else muon_weight_decay,
                 momentum=momentum,
                 adjust_lr_fn=adjust_lr_fn,
             ),
-            torch.optim.AdamW(
-                [
-                    {"params": decay, "weight_decay": weight_decay},
-                    {"params": no_decay, "weight_decay": 0.0},
-                ],
-                lr=lr,
-                betas=betas,
-                eps=eps,
-            ),
+            torch.optim.AdamW(adamw_groups, lr=lr, betas=betas, eps=eps),
         ]
     )
-
-
-class OptimizerTrainer(Trainer):
-    """Stock `transformers.Trainer` plus an optional Muon optimizer.
-
-    With `use_muon=False` (the default) this is exactly the stock Trainer — every
-    HF-native optimizer flows through `TrainingArguments.optim` untouched. With
-    `use_muon=True`, `create_optimizer` builds Muon (+ aux AdamW) from the model after
-    it is placed / FSDP-sharded. Overriding `create_optimizer` is mandatory for FSDP:
-    HF rejects a pre-built `optimizers=` tuple once FSDP is on. No training loop is
-    overridden — `lr`/`weight_decay`/scheduler all still come from `TrainingArguments`.
-    """
-
-    def __init__(self, *args: Any, use_muon: bool = False, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        self._use_muon = use_muon
-
-    def create_optimizer(self, model: nn.Module | None = None) -> torch.optim.Optimizer:
-        if self.optimizer is not None or not self._use_muon:
-            return super().create_optimizer(model)
-        opt_model = model if model is not None else self.model
-        assert opt_model is not None, "OptimizerTrainer.create_optimizer needs a model"
-        self.optimizer = build_muon_optimizer(
-            opt_model, lr=self.args.learning_rate, weight_decay=self.args.weight_decay
-        )
-        return self.optimizer

@@ -9,9 +9,9 @@ it for your runs.
     # single GPU
     python scripts/pretrain.py --data /data/train.parquet --output-dir out
 
-    # multi-GPU + FSDP2
-    torchrun --standalone --nproc_per_node=8 scripts/pretrain.py \
-        --data /data/train/ --output-dir out --fsdp --bf16 --gradient-checkpointing
+    # multi-GPU (DDP)
+    accelerate launch --multi_gpu --mixed_precision bf16 scripts/pretrain.py \
+        --data /data/train/ --output-dir out --bf16 --gradient-checkpointing
 
 `--data` is a parquet file/dir with `sequence_id` + `sequence` columns (shard
 into multiple parquet files for `--num-workers > 1`).
@@ -23,10 +23,10 @@ import argparse
 from pathlib import Path
 
 from datasets import load_dataset
-from transformers import DataCollatorForLanguageModeling, TrainingArguments
+from transformers import DataCollatorForLanguageModeling, Trainer, TrainingArguments
 
 from ablm import AblmConfig, AblmForMaskedLM, AblmTokenizerFast
-from ablm.training.optim import MUON_OPTIM, OptimizerTrainer
+from ablm.training.optim import MUON_OPTIM, build_muon_optimizer
 
 # HF-native optimizers are just TrainingArguments.optim strings.
 _HF_OPTIM = {"adamw": "adamw_torch", "adamw_fused": "adamw_torch_fused", "adafactor": "adafactor"}
@@ -76,7 +76,6 @@ def parse_args() -> argparse.Namespace:
     # Hardware / memory
     p.add_argument("--bf16", action="store_true")
     p.add_argument("--gradient-checkpointing", action="store_true")
-    p.add_argument("--fsdp", action="store_true", help="enable FSDP2 full_shard")
     return p.parse_args()
 
 
@@ -97,20 +96,6 @@ def main() -> None:
     )
     collator = DataCollatorForLanguageModeling(tokenizer=AblmTokenizerFast(), mlm=True)
 
-    # FSDP2: shard on the AblmBlock; route activation checkpointing into fsdp_config
-    # (the Trainer's gradient_checkpointing adds a redundant all-gather under FSDP).
-    fsdp = ""
-    fsdp_config = None
-    grad_ckpt_arg = args.gradient_checkpointing
-    if args.fsdp:
-        fsdp = "full_shard auto_wrap"
-        fsdp_config = {
-            "fsdp_version": 2,
-            "transformer_layer_cls_to_wrap": ["AblmBlock"],
-            "activation_checkpointing": args.gradient_checkpointing,
-        }
-        grad_ckpt_arg = False
-
     training_args = TrainingArguments(
         output_dir=args.output_dir,
         max_steps=args.max_steps,
@@ -122,10 +107,8 @@ def main() -> None:
         optim=_HF_OPTIM.get(args.optimizer, "adamw_torch"),
         adam_beta2=0.98,  # ESM-2 / ESM-C use beta2=0.98 for the AdamW arm
         bf16=args.bf16,
-        gradient_checkpointing=grad_ckpt_arg,
+        gradient_checkpointing=args.gradient_checkpointing,
         gradient_checkpointing_kwargs={"use_reentrant": False},
-        fsdp=fsdp,
-        fsdp_config=fsdp_config,
         dataloader_num_workers=args.num_workers,
         save_steps=args.save_steps,
         logging_steps=10,
@@ -135,15 +118,26 @@ def main() -> None:
     )
 
     # HF-native optimizers (adamw, …) come straight from training_args.optim. Muon is the
-    # one HF doesn't ship: OptimizerTrainer builds it in create_optimizer (after FSDP
-    # sharding) when use_muon is set — a subclass is required because HF rejects a pre-built
-    # optimizers= tuple under FSDP. The scheduler still comes from args.
-    trainer = OptimizerTrainer(
+    # one HF doesn't ship: build it here (DistributedMuon on the 2D body weights + AdamW on
+    # the rest) and hand the stock Trainer optimizers=(opt, None). The LR scheduler still
+    # comes from args. Everything else — collator, metrics, callbacks — is a stock arg.
+    optimizers: tuple = (None, None)
+    if args.optimizer == MUON_OPTIM:
+        muon_opt = build_muon_optimizer(
+            model,
+            lr=args.lr,
+            weight_decay=args.weight_decay,
+            betas=(0.9, training_args.adam_beta2),
+            eps=training_args.adam_epsilon,
+        )
+        optimizers = (muon_opt, None)
+
+    trainer = Trainer(
         model=model,
         args=training_args,
         train_dataset=dataset,
         data_collator=collator,
-        use_muon=args.optimizer == MUON_OPTIM,
+        optimizers=optimizers,
     )
     trainer.train()
     trainer.save_model()

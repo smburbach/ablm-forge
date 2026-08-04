@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from ablm.model import AblmConfig
-from ablm.model.ffn import round_up_to
+from ablm.model.layers.ffn import round_up_to
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -38,6 +38,7 @@ def test_defaults_match_architecture_spec():
     assert cfg.ffn_activation == "swiglu"
     assert cfg.ffn_bias is False
     assert cfg.token_dropout is False  # ESM-C removed token dropout
+    assert cfg.attention_bias is False
     assert cfg.attention_dropout == 0.0
     assert cfg.hidden_dropout == 0.0
     assert cfg.tie_word_embeddings is False
@@ -140,25 +141,9 @@ def test_rejects_negative_rope_dim():
         )
 
 
-@pytest.mark.parametrize(
-    "field,bad_value,expected_match",
-    [
-        ("norm_type", "zorm", "norm_type must be one of"),
-        ("norm_strategy", "preprost", "norm_strategy must be one of"),
-        ("residual_scaling", "linear", "residual_scaling must be one of"),
-        ("ffn_activation", "relu", "ffn_activation must be one of"),
-        ("mlm_head_activation", "swiglu", "mlm_head_activation must be one of"),
-        ("classifier_pool", "max", "classifier_pool must be one of"),
-    ],
-)
-def test_rejects_unknown_categorical_values(field, bad_value, expected_match):
-    with pytest.raises(ValueError, match=expected_match):
-        AblmConfig(**{field: bad_value})
-
-
-def test_non_default_vocab_emits_warning():
-    with pytest.warns(UserWarning, match="custom vocabularies are not yet supported"):
-        AblmConfig(vocab_size=64)
+# Categorical fields are Literal-typed and validated where they are consumed, not at
+# AblmConfig construction — see the reject tests in test_norm.py (make_norm),
+# test_ffn.py (make_ffn), and test_transformer.py (the AblmBlock norm dispatch).
 
 
 # ---------------------------------------------------------------------------
@@ -219,3 +204,23 @@ def test_save_pretrained_writes_token_ids(tmp_path: Path):
     assert on_disk["pad_token_id"] == 1
     assert on_disk["bos_token_id"] == 0
     assert on_disk["eos_token_id"] == 2
+
+
+def test_intermediate_size_derivation_is_variant_aware():
+    # Gated (3 matrices): ~8/3 * D keeps params matched to a 4x non-gated MLP.
+    gated = AblmConfig(hidden_size=960, num_attention_heads=15, ffn_activation="swiglu")
+    assert gated.intermediate_size == 2560
+    # Non-gated (2 matrices): the classic 4x expansion.
+    mlp = AblmConfig(hidden_size=960, num_attention_heads=15, ffn_activation="gelu")
+    assert mlp.intermediate_size == 3840
+
+
+def test_unknown_categorical_value_is_accepted_by_config_and_caught_at_build():
+    # Construction does not validate categorical values; the consumer (here make_ffn,
+    # via building the model) is what raises on an unknown value.
+    cfg = AblmConfig(ffn_activation="not_a_variant")  # no raise at construction
+    assert cfg.ffn_activation == "not_a_variant"
+    from ablm import AblmForMaskedLM
+
+    with pytest.raises(ValueError, match="Unknown ffn_activation"):
+        AblmForMaskedLM(cfg)

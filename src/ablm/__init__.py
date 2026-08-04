@@ -12,21 +12,24 @@ from transformers import (
 )
 
 from .model import (
+    PRESETS,
     AblmConfig,
     AblmForMaskedLM,
     AblmForSequenceClassification,
     AblmForTokenClassification,
     AblmModel,
     AblmTokenizerFast,
-    LogitsConfig,
-    LogitsOutput,
+    from_preset,
 )
 
 __version__ = "0.0.1"
 
-# (1) In-process registration so `import ablm` plus AutoModel*.from_pretrained
-# works without trust_remote_code. HF's `register` raises on a duplicate
-# model_type, so guard each call to keep re-imports idempotent.
+# In-process registration so `import ablm` plus AutoModel*.from_pretrained
+# resolves the ABLM classes (BALM-style). Loading a checkpoint therefore
+# requires ablm-forge installed — there is deliberately no `register_for_auto_class`
+# / `auto_map` / trust_remote_code path, which would force a flat model package.
+# HF's `register` raises on a duplicate model_type, so guard each call to keep
+# re-imports idempotent.
 AutoConfig.register("ablm", AblmConfig, exist_ok=True)
 AutoModel.register(AblmConfig, AblmModel, exist_ok=True)
 AutoModelForMaskedLM.register(AblmConfig, AblmForMaskedLM, exist_ok=True)
@@ -36,21 +39,8 @@ AutoModelForSequenceClassification.register(
 AutoModelForTokenClassification.register(AblmConfig, AblmForTokenClassification, exist_ok=True)
 AutoTokenizer.register(AblmConfig, fast_tokenizer_class=AblmTokenizerFast, exist_ok=True)
 
-# (2) Tell HF to copy the custom-code .py files when push_to_hub is called and
-# to write the matching auto_map entries into config.json / tokenizer_config.json.
-# Setting auto_map manually is NOT sufficient — register_for_auto_class is the
-# documented hook for the file-copy step. These set a class attribute, so repeat
-# calls are no-ops.
-AblmConfig.register_for_auto_class("AutoConfig")
-AblmModel.register_for_auto_class("AutoModel")
-AblmForMaskedLM.register_for_auto_class("AutoModelForMaskedLM")
-AblmForSequenceClassification.register_for_auto_class("AutoModelForSequenceClassification")
-AblmForTokenClassification.register_for_auto_class("AutoModelForTokenClassification")
-AblmTokenizerFast.register_for_auto_class("AutoTokenizer")
-
 __all__ = [
-    "LogitsConfig",
-    "LogitsOutput",
+    "PRESETS",
     "AblmConfig",
     "AblmForMaskedLM",
     "AblmForSequenceClassification",
@@ -58,4 +48,5 @@ __all__ = [
     "AblmModel",
     "AblmTokenizerFast",
     "__version__",
+    "from_preset",
 ]
