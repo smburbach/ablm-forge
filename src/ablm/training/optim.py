@@ -173,16 +173,25 @@ def build_muon_optimizer(
     betas: tuple[float, float] = (0.9, 0.999),
     eps: float = 1e-8,
     momentum: float = 0.95,
-    adjust_lr_fn: str | None = "match_rms_adamw",
+    adjust_lr_fn: str | None = "auto",
     muon_weight_decay: float | None = None,
     decay_parameter_names: set[str] | None = None,
 ) -> CombinedOptimizer:
     """Build Muon (2D body weights) + AdamW (everything else) as one optimizer.
 
-    `adjust_lr_fn="match_rms_adamw"` rescales the Muon update to AdamW's RMS
-    (Moonshot 2025), so AdamW's tuned `lr` / `weight_decay` transfer to Muon --
-    which is why `weight_decay` applies to BOTH children by default. Pass
-    `muon_weight_decay` to decouple them.
+    Muon's `adjust_lr_fn` is width-critical and defaults to `"auto"`:
+
+    * **non-muP** -> `"match_rms_adamw"` (Moonshot 2025): rescales the Muon update to
+      AdamW's RMS so one tuned `lr` / `weight_decay` serves both children at a single
+      scale (which is why `weight_decay` applies to BOTH by default).
+    * **muP** (`config.mup_enabled`) -> `"original"` (aspect-ratio-only,
+      `sqrt(max(1, d_out/d_in))`). This is mandatory for LR transfer:
+      `match_rms_adamw` scales like `0.2*sqrt(max(d_out, d_in))` ~ `sqrt(width)`, so it
+      grows with width and breaks muP transfer, whereas the aspect ratio is constant
+      across the (fixed-head_dim) preset ladder. Passing `match_rms_adamw` explicitly
+      under muP raises. See ablm-sweeps' oplm `docs/MUP.md` and TP-V spectral conditions.
+
+    Pass `muon_weight_decay` to decouple the two decay values.
 
     `decay_parameter_names` should be `Trainer.get_decay_parameter_names(model)`, so
     the decay / no-decay split matches HF's convention. When it is `None` the fallback
@@ -202,8 +211,22 @@ def build_muon_optimizer(
         no_decay = [p for n, p in pairs if n not in decay_parameter_names]
 
     cfg = getattr(model, "config", None)
+    mup_on = cfg is not None and getattr(cfg, "mup_enabled", False)
+
+    # muP LR transfer needs the aspect-ratio-only "original" Muon rule; match_rms_adamw
+    # grows ~sqrt(width) and breaks transfer (see docstring).
+    if adjust_lr_fn == "auto":
+        muon_adjust_lr_fn: str | None = "original" if mup_on else "match_rms_adamw"
+    elif mup_on and adjust_lr_fn == "match_rms_adamw":
+        raise ValueError(
+            "muP + Muon requires adjust_lr_fn='original' (or 'auto'); 'match_rms_adamw' "
+            "scales ~sqrt(width) and breaks LR transfer across the preset ladder."
+        )
+    else:
+        muon_adjust_lr_fn = adjust_lr_fn
+
     mup_group = None
-    if cfg is not None and getattr(cfg, "mup_enabled", False):
+    if mup_on:
         # muP: every hidden AdamW 2D weight (readout, MLM-head dense, classifier, ...)
         # has fan_in proportional to width and needs Adam LR ~ 1/d, scaled here by
         # `d0/d` (`mup_adamw_lr_mult`). The input embedding is Theta(1) LR and is
@@ -232,7 +255,7 @@ def build_muon_optimizer(
                 lr=lr,
                 weight_decay=weight_decay if muon_weight_decay is None else muon_weight_decay,
                 momentum=momentum,
-                adjust_lr_fn=adjust_lr_fn,
+                adjust_lr_fn=muon_adjust_lr_fn,
             ),
             torch.optim.AdamW(adamw_groups, lr=lr, betas=betas, eps=eps),
         ]

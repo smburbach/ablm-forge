@@ -24,6 +24,27 @@ def _group_lrs(opt) -> list[float]:
     return [g["lr"] for g in opt.param_groups]
 
 
+def _muon_adjust_lr_fn(opt) -> str | None:
+    # The Muon child is the first sub-optimizer; its adjust_lr_fn lives on the group.
+    return opt.optimizers[0].param_groups[0]["adjust_lr_fn"]
+
+
+def test_mup_forces_original_muon_lr_rule():
+    """muP LR transfer requires Muon's aspect-ratio-only 'original' rule -- not
+    match_rms_adamw, which scales ~sqrt(width) and breaks transfer."""
+    assert _muon_adjust_lr_fn(build_muon_optimizer(_model(mup=True), lr=1e-3)) == "original"
+
+
+def test_non_mup_keeps_match_rms_adamw():
+    """Off muP, the single-scale Moonshot RMS-match rule is correct (and the default)."""
+    assert _muon_adjust_lr_fn(build_muon_optimizer(_model(mup=False), lr=1e-3)) == "match_rms_adamw"
+
+
+def test_explicit_match_rms_adamw_under_mup_raises():
+    with pytest.raises(ValueError, match="match_rms_adamw"):
+        build_muon_optimizer(_model(mup=True), lr=1e-3, adjust_lr_fn="match_rms_adamw")
+
+
 def test_disabled_has_no_extra_mup_group():
     opt = build_muon_optimizer(_model(mup=False), lr=1e-3)
     # 1 Muon group + 2 AdamW groups (decay / no-decay).
