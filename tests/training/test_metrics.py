@@ -234,6 +234,27 @@ def test_region_eval_mixin_prediction_step_reduces_logits_and_carries_region(
     assert "region_mask" not in inputs
 
 
+def test_region_eval_mixin_strips_region_mask_in_training(tiny_model: AblmForMaskedLM, tmp_path):
+    """Training compute_loss must drop region_mask before model.forward: the collator carries
+    it on every batch and the model does not accept it. Without the strip this raises the
+    `TypeError: forward() got an unexpected keyword argument 'region_mask'` the anchor smoke hit."""
+    # use_cpu: compute_loss (called directly) doesn't move inputs to device like the training
+    # loop's _prepare_inputs does, so keep model + inputs both on CPU for this unit test.
+    args = TrainingArguments(output_dir=str(tmp_path), report_to="none", use_cpu=True)
+    trainer = _RegionTrainer(model=tiny_model, args=args)
+
+    input_ids = torch.randint(4, 30, (2, 6))
+    inputs = {
+        "input_ids": input_ids,
+        "attention_mask": torch.ones_like(input_ids),
+        "labels": input_ids.clone(),
+        "region_mask": torch.zeros(2, 6, dtype=torch.long),
+    }
+    loss = trainer.compute_loss(tiny_model, inputs)
+    assert torch.isfinite(loss).item()
+    assert "region_mask" not in inputs  # stripped before reaching model.forward
+
+
 def test_region_eval_mixin_prediction_loss_only_skips_reduction(
     tiny_model: AblmForMaskedLM, tmp_path
 ):

@@ -76,12 +76,16 @@ def compute_metrics(eval_pred: EvalPrediction) -> dict[str, float]:
 
 
 class RegionEvalMixin:
-    """Region-aware evaluation, for a Trainer: swap in `eval_data_collator` so masking is uniform
-    for every arm however it trained (else eval/loss is not comparable), and reduce each eval
-    step's logits to per-token CE + hits, carried beside region_mask for compute_metrics.
+    """Region-aware training + evaluation, for a Trainer paired with
+    `PreferentialMaskingCollator`. The collator carries `region_mask` on every batch;
+    this mixin strips it before `model.forward` in training (`compute_loss`) and eval
+    (`prediction_step`) -- the model does not accept it -- and additionally, in eval,
+    swaps in `eval_data_collator` so masking is uniform for every arm however it trained
+    (else eval/loss is not comparable) and reduces each eval step's logits to per-token
+    CE + hits carried beside region_mask for compute_metrics.
 
-    region_mask comes off the eval batch, not the model output, so model.py's arch class-swaps are
-    untouched. Reducing in the step also puts it ahead of the cross-rank gather."""
+    region_mask comes off the batch, not the model output, so model.py's arch class-swaps
+    are untouched. Reducing in the step also puts it ahead of the cross-rank gather."""
 
     def __init__(self, *args: Any, eval_data_collator: Any = None, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
@@ -100,6 +104,14 @@ class RegionEvalMixin:
             )  # mixin is always composed with Trainer
         finally:
             self.data_collator = orig
+
+    def compute_loss(self, model: Any, inputs: dict[str, Any], *args: Any, **kwargs: Any) -> Any:
+        # PreferentialMaskingCollator carries region_mask on every batch, but only eval
+        # (prediction_step) consumes it. Drop it in training so it never reaches
+        # model.forward, which does not accept it. `None` default: eval's prediction_step
+        # already popped it before compute_loss runs, so this is a no-op there.
+        inputs.pop("region_mask", None)
+        return super().compute_loss(model, inputs, *args, **kwargs)  # ty: ignore[unresolved-attribute]
 
     def prediction_step(
         self,
