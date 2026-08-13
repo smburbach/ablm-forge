@@ -1,4 +1,4 @@
-"""Tests for `ablm.data.collators` — region-weighted CDR masking collator.
+"""Tests for `ablm.training.data.collators` — region-weighted CDR masking collator.
 
 Load-bearing invariants under test: exact per-sequence masked-token count,
 separator (`region_mask == -1`) never masked, and CDR-region weighting biasing
@@ -10,8 +10,8 @@ from __future__ import annotations
 import pytest
 import torch
 
-from ablm.data.collators import PreferentialMaskingCollator, add_region_mask, pair_mask
 from ablm.model.tokenization_ablm import AblmTokenizerFast
+from ablm.training.data import PreferentialMaskingCollator, add_region_mask, pair_mask
 
 # Index of the interior `<cls>` separator for the fixed-length example built below:
 # [CLS](1) + 20 heavy residues + <cls>(1) + 20 light residues + [EOS](1) -> index 21.

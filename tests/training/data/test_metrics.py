@@ -1,4 +1,4 @@
-"""Tests for `ablm.training.metrics` — per-region eval CE/accuracy + RegionEvalMixin."""
+"""Tests for `ablm.training.data.metrics` — per-region eval CE/accuracy + RegionEvalMixin."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import torch
 from transformers import Trainer, TrainingArguments
 
 from ablm import AblmConfig, AblmForMaskedLM
-from ablm.training.metrics import RegionEvalMixin, compute_metrics, per_token_ce_and_hits
+from ablm.training.data import RegionEvalMixin, compute_metrics, per_token_ce_and_hits
 
 # ---------------------------------------------------------------------------
 # per_token_ce_and_hits

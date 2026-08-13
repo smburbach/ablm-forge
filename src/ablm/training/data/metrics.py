@@ -1,6 +1,6 @@
 """Per-region eval metrics (CDR-level CE / accuracy) for region-weighted MLM.
 
-Pairs with `ablm.data.PreferentialMaskingCollator`: `RegionEvalMixin` swaps in a
+Pairs with `ablm.training.data.PreferentialMaskingCollator`: `RegionEvalMixin` swaps in a
 uniform eval collator and reduces logits to per-token CE/hits in
 `prediction_step`, `compute_metrics` aggregates those by region. Ported from
 `esm2/12_sota_convergence/training_mods/preferential_masking.py` in

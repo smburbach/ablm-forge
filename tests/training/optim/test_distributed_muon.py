@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 import torch
 
-from ablm.training.distributed_muon import DistributedMuon
+from ablm.training.optim import DistributedMuon
 
 pytestmark = pytest.mark.skipif(
     not hasattr(torch.optim, "Muon"),

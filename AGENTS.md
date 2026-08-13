@@ -85,6 +85,20 @@ gated variants.
   (`data_collator=`, `compute_metrics=`, `callbacks=`); the one exception is
   `RegionEvalMixin`, mixed into a Trainer subclass only when you need per-region
   eval. Don't override `training_step`/`compute_loss`/the loop.
+- **Everything under `training/` is a named concern that maps to a `Trainer` wiring
+  point** — `optim/` to `optimizers=`, `data/` to `data_collator=` /
+  `compute_metrics=`. Nothing lands loose in `training/` without a name: a new
+  concern (callbacks, samplers) gets its own subpackage, not a bare module dropped
+  alongside the others. "It happens during training" is not a reason to put
+  something here — that reasoning is what turns a package into `utils/`. Import from
+  the subpackage (`from ablm.training.data import ...`), never from its modules, so
+  the internal split stays rearrangeable.
+- **Keep a contract's producer and consumer in the same subpackage.**
+  `PreferentialMaskingCollator` writes `region_mask` onto each batch and
+  `RegionEvalMixin` / `compute_metrics` are its only readers; no import binds them,
+  so colocation in `training/data/` is the only thing keeping that contract legible.
+  Splitting the two by pipeline phase is what previously put them in two different
+  top-level packages.
 - **Attention is SDPA + a manual fallback** in `ablm/model/layers/attention.py`.
   Don't reintroduce a kernel registry / explicit flash-attn integration: SDPA
   already auto-selects the fused backend.
@@ -112,12 +126,18 @@ src/ablm/
 │   ├── configuration_ablm.py   # AblmConfig
 │   ├── tokenization_ablm.py    # AblmTokenizerFast (33-token ESM-C vocab)
 │   ├── modeling_ablm.py        # all public Ablm* model classes
+│   ├── presets.py              # muP preset ladder (35m/150m/300m/600m)
 │   └── layers/                 # architecture building blocks (the screen surface)
 │       ├── norm.py masking.py rope.py embedding.py ffn.py
 │       ├── attention.py        # AblmAttention: SDPA + manual-softmax fallback
 │       └── transformer.py      # AblmBlock + AblmStack
-└── training/
-    └── optim.py                # Muon CombinedOptimizer + build_muon_optimizer
+└── training/                   # one subpackage per Trainer wiring point
+    ├── optim/                  # -> optimizers=
+    │   ├── muon.py             # CombinedOptimizer + build_muon_optimizer + param split
+    │   └── distributed_muon.py # DDP-sharded Newton-Schulz
+    └── data/                   # -> data_collator= / compute_metrics=
+        ├── collators.py        # PreferentialMaskingCollator (writes region_mask)
+        └── metrics.py          # RegionEvalMixin + compute_metrics (read region_mask)
 scripts/pretrain.py             # example training script: data loading + Trainer wiring
 tests/                          # pytest, mirrors src/
 ```
