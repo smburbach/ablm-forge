@@ -12,6 +12,12 @@ attention (square) and MLP (rectangular) weights, since alternatives like Gram
 Newton-Schulz only help on rectangular matrices and fall back to standard NS when
 m == n.
 
+Measured 2026-08-17 on an RTX PRO 6000 Blackwell, anchor config (960/30/2560) at
+batch 128 x seq 320 bf16: NS is 56 ms of a 476 ms compiled step, i.e. 11.8% on one
+rank and 6.3% sharded over two. Uncompiled it is 2.8%, because compile speeds up
+forward/backward 2.4x while leaving the optimizer untouched -- so measure with the
+same compile setting the real run uses.
+
     python scripts/bench_newton_schulz.py                 # whole ladder, bf16
     python scripts/bench_newton_schulz.py --world-size 2  # per-rank, sharded over DDP
 """

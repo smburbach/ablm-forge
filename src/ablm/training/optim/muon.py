@@ -197,6 +197,9 @@ def build_muon_optimizer(
     `newton_schulz_func(update, eps) -> Tensor` replaces the orthogonalizer (signature
     matches microsoft/dion, so alternatives port unchanged); `None` keeps torch's.
 
+    Call this BEFORE `torch.compile`: compiling renames params to `_orig_mod.*`, so the
+    Muon prefix matches nothing and the empty-group assert fires.
+
     Pass `muon_weight_decay` to decouple the two decay values.
 
     `decay_parameter_names` should be `Trainer.get_decay_parameter_names(model)`, so
