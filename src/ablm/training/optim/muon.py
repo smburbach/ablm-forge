@@ -176,6 +176,7 @@ def build_muon_optimizer(
     adjust_lr_fn: str | None = "auto",
     muon_weight_decay: float | None = None,
     decay_parameter_names: set[str] | None = None,
+    newton_schulz_func: Callable[[torch.Tensor, float], torch.Tensor] | None = None,
 ) -> CombinedOptimizer:
     """Build Muon (2D body weights) + AdamW (everything else) as one optimizer.
 
@@ -190,6 +191,11 @@ def build_muon_optimizer(
       grows with width and breaks muP transfer, whereas the aspect ratio is constant
       across the (fixed-head_dim) preset ladder. Passing `match_rms_adamw` explicitly
       under muP raises. See ablm-sweeps' oplm `docs/MUP.md` and TP-V spectral conditions.
+      Corroborated independently by Dion3 (arXiv:2608.11612), whose Muon ships the same
+      split: `adjust_lr="spectral_norm"` for scale transfer vs `"rms_norm"` for AdamW.
+
+    `newton_schulz_func(update, eps) -> Tensor` replaces the orthogonalizer (signature
+    matches microsoft/dion, so alternatives port unchanged); `None` keeps torch's.
 
     Pass `muon_weight_decay` to decouple the two decay values.
 
@@ -256,6 +262,7 @@ def build_muon_optimizer(
                 weight_decay=weight_decay if muon_weight_decay is None else muon_weight_decay,
                 momentum=momentum,
                 adjust_lr_fn=muon_adjust_lr_fn,
+                newton_schulz_func=newton_schulz_func,
             ),
             torch.optim.AdamW(adamw_groups, lr=lr, betas=betas, eps=eps),
         ]

@@ -193,3 +193,44 @@ def test_build_muon_optimizer_applies_betas_and_eps(tiny_model):
     for group in _adamw_child(opt).param_groups:
         assert group["betas"] == (0.9, 0.98)
         assert group["eps"] == 1e-5
+
+
+def test_newton_schulz_func_overrides_the_orthogonalizer(tiny_model: AblmForMaskedLM) -> None:
+    """The injected function replaces torch's NS and receives every 2D body weight."""
+    seen: list[tuple[int, int]] = []
+
+    def spy(update: torch.Tensor, eps: float) -> torch.Tensor:
+        seen.append(tuple(update.shape))
+        return torch.zeros_like(update)
+
+    opt = build_muon_optimizer(tiny_model, lr=1e-3, weight_decay=0.0, newton_schulz_func=spy)
+    muon_params = [p for g in opt.optimizers[0].param_groups for p in g["params"]]
+    before = [p.detach().clone() for p in muon_params]
+
+    for p in tiny_model.parameters():
+        p.grad = torch.randn_like(p)
+    opt.step()
+
+    assert len(seen) == len(muon_params), "orthogonalizer not called once per Muon param"
+    assert all(len(s) == 2 for s in seen)
+    # a zero update plus zero weight decay must leave the Muon params untouched
+    for p, prev in zip(muon_params, before, strict=True):
+        torch.testing.assert_close(p, prev)
+
+
+def test_newton_schulz_func_defaults_to_torch(tiny_model: AblmForMaskedLM) -> None:
+    """Omitting it leaves the update byte-identical to the stock path."""
+    torch.manual_seed(0)
+    grads = {n: torch.randn_like(p) for n, p in tiny_model.named_parameters()}
+
+    def run(**kwargs: object) -> list[torch.Tensor]:
+        model = AblmForMaskedLM(tiny_model.config)
+        model.load_state_dict(tiny_model.state_dict())
+        opt = build_muon_optimizer(model, lr=1e-3, weight_decay=0.0, **kwargs)  # type: ignore[arg-type]
+        for n, p in model.named_parameters():
+            p.grad = grads[n].clone()
+        opt.step()
+        return [p.detach().clone() for p in model.parameters()]
+
+    for a, b in zip(run(), run(newton_schulz_func=None), strict=True):
+        torch.testing.assert_close(a, b)
