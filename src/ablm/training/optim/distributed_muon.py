@@ -31,6 +31,7 @@ Requires torch >= 2.11 (reuses `torch.optim._muon` internals).
 from __future__ import annotations
 
 from collections import defaultdict
+from typing import TYPE_CHECKING
 
 import torch
 import torch.distributed as dist
@@ -43,6 +44,13 @@ from torch.optim._muon import (
     _adjust_lr,
     _zeropower_via_newtonschulz,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    # Signature matches microsoft/dion's `newton_schulz_func` so alternative
+    # orthogonalizers port without an adapter.
+    NewtonSchulzFn = Callable[[torch.Tensor, float], torch.Tensor]
 
 __all__ = ["DistributedMuon"]
 
@@ -66,6 +74,7 @@ class DistributedMuon(torch.optim.Optimizer):
         eps: float = EPS,
         ns_steps: int = DEFAULT_NS_STEPS,
         adjust_lr_fn: str | None = None,
+        newton_schulz_func: NewtonSchulzFn | None = None,
     ) -> None:
         if lr < 0.0:
             raise ValueError(f"Learning rate should be >= 0 but is: {lr}")
@@ -80,6 +89,7 @@ class DistributedMuon(torch.optim.Optimizer):
             eps=eps,
             ns_steps=ns_steps,
             adjust_lr_fn=adjust_lr_fn,
+            newton_schulz_func=newton_schulz_func,
         )
         super().__init__(params, defaults)
 
@@ -96,9 +106,13 @@ class DistributedMuon(torch.optim.Optimizer):
         momentum = group["momentum"]
         buf.lerp_(grad, 1 - momentum)
         update = grad.lerp(buf, momentum) if group["nesterov"] else buf
-        update = _zeropower_via_newtonschulz(
-            update, group["ns_coefficients"], group["ns_steps"], group["eps"]
-        )
+        ns_func = group.get("newton_schulz_func")
+        if ns_func is None:
+            update = _zeropower_via_newtonschulz(
+                update, group["ns_coefficients"], group["ns_steps"], group["eps"]
+            )
+        else:
+            update = ns_func(update, group["eps"])
         adjusted_lr = _adjust_lr(group["lr"], group["adjust_lr_fn"], p.shape)
         p.mul_(1 - group["lr"] * group["weight_decay"])
         p.add_(update, alpha=-adjusted_lr)
