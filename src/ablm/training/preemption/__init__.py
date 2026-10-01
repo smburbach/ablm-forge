@@ -4,7 +4,9 @@
 preemption path: HF's `enable_jit_checkpoint` saves on SIGTERM, each save is mirrored to
 object storage with `s5cmd`, a re-queued job restores before resuming, DataLoader workers
 are shielded from SIGTERM, and `finish()` uploads, cleans up and exits. Build the trainer,
-call `train()`, then `finish()`; the sweep script must launch training as an `srun` step.
+call `train()`, then `finish()`. The batch script must launch training as an `srun` step and
+ignore SIGTERM itself (`trap '' TERM`), otherwise bash exits first and tears the step down
+mid-checkpoint.
 
 This is a tracked port of coreweave-docs `model-training/single-run/jit/preemption.py` at
 `d748711`, plus an off-cluster guard (no `JOB_WORK_DIR`: upload and cleanup are skipped so a

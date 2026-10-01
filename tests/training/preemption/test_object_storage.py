@@ -8,6 +8,7 @@ import pytest
 from transformers import TrainingArguments
 
 from ablm.training.preemption.object_storage import (
+    S3_ENDPOINT,
     discard_torn_checkpoints,
     latest_complete_checkpoint,
     mirror_to_object_storage,
@@ -69,8 +70,21 @@ def test_mirror_first_bucket_first_try(fake_s5cmd: FakeS5cmd, cluster_env: Path)
     (cluster_env / ".hidden").write_text("x")
     assert mirror_to_object_storage() is True
     calls = fake_s5cmd.calls()
-    assert len(calls) == 1
-    assert "s3://brineylab-eu/u/job1/" in calls[0]
+    assert calls == [
+        [
+            "s5cmd",
+            "--endpoint-url",
+            S3_ENDPOINT,
+            "sync",
+            "--exclude",
+            "*/.*",
+            "--exclude",
+            ".*",
+            "--delete",
+            f"{cluster_env}/",
+            "s3://brineylab-eu/u/job1/",
+        ]
+    ]
     target = fake_s5cmd.bucket("brineylab-eu") / "u" / "job1"
     assert (target / "model.bin").exists()
     assert not (target / ".hidden").exists()
@@ -127,6 +141,17 @@ def test_restore_reads_every_bucket_newest_in_second(
     assert latest_complete_checkpoint(str(cluster_env)) == str(cluster_env / "checkpoint-200")
     assert (cluster_env / "checkpoint-100").is_dir()
     assert (cluster_env / "checkpoint-200").is_dir()
+    assert fake_s5cmd.calls() == [
+        [
+            "s5cmd",
+            "--endpoint-url",
+            S3_ENDPOINT,
+            "sync",
+            f"s3://{bucket}/u/job1/*",
+            f"{cluster_env}/",
+        ]
+        for bucket in ("brineylab-eu", "brineylab-us-east")
+    ]
 
 
 def test_restore_discards_torn_before_next_bucket(fake_s5cmd: FakeS5cmd, cluster_env: Path) -> None:

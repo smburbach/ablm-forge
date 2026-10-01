@@ -22,7 +22,7 @@ from pathlib import Path
 root = Path(os.environ["FAKE_S5CMD_ROOT"])
 argv = sys.argv[1:]
 with open(os.environ["FAKE_S5CMD_LOG"], "a") as log:
-    log.write("\\t".join(argv) + "\\n")
+    log.write("\\t".join(["s5cmd", *argv]) + "\\n")
 
 args = argv[2:] if argv[:1] == ["--endpoint-url"] else argv
 assert args[0] == "sync", args
