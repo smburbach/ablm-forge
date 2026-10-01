@@ -190,7 +190,9 @@ def masking_stats(labels: torch.Tensor, region_mask: torch.Tensor, p: float) -> 
 
 
 class MaskingStatsMixin:
-    """Log ``masking_stats`` of the latest training batch under ``mask/*``.
+    """Log ``masking_stats`` of the latest training micro-batch under ``mask/*``.
+
+    Under gradient accumulation only the last micro-batch of each step is stashed.
 
     Computed in the main process from the batch itself: the collator runs in DataLoader
     workers, so anything it stashes on itself never reaches a callback. Mix in ahead of
