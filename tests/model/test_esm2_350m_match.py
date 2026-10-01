@@ -51,7 +51,7 @@ def esm2_350m_config(**overrides: object) -> AblmConfig:
         init_scale_output_projections=False,
     )
     fields.update(overrides)
-    return AblmConfig(**fields)  # ty: ignore[invalid-argument-type]
+    return AblmConfig(**fields)  # ty: ignore[invalid-argument-type]  # dict[str, object] unpack into typed kwargs
 
 
 def test_head_dim_is_48():

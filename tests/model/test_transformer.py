@@ -402,7 +402,9 @@ def test_stack_padded_inputs_match_unpadded_at_real_positions():
 class _ZeroAttention(torch.nn.Module):
     """Stands in for AblmAttention so only the FFN sublayer can perturb the output."""
 
-    def forward(self, x, attention_mask, output_attentions=False):
+    def forward(
+        self, x: torch.Tensor, attention_mask: torch.Tensor, output_attentions: bool = False
+    ) -> tuple[torch.Tensor, None]:
         return torch.zeros_like(x), None
 
 
@@ -420,12 +422,12 @@ def _block_with_zero_attention(hidden_dropout: float) -> AblmBlock:
     return block
 
 
-def _inputs():
+def _inputs() -> tuple[torch.Tensor, torch.Tensor]:
     torch.manual_seed(0)
     return torch.randn(2, 8, 32), torch.ones(2, 8, dtype=torch.long)
 
 
-def test_ffn_output_dropout_is_live_in_training():
+def test_ffn_output_dropout_is_live_in_training() -> None:
     block = _block_with_zero_attention(0.5).train()
     x, mask = _inputs()
     y1, _ = block(x, mask)
@@ -433,14 +435,14 @@ def test_ffn_output_dropout_is_live_in_training():
     assert not torch.allclose(y1, y2)
 
 
-def test_ffn_output_dropout_is_identity_in_eval():
+def test_ffn_output_dropout_is_identity_in_eval() -> None:
     block = _block_with_zero_attention(0.5).eval()
     x, mask = _inputs()
     y, _ = block(x, mask)
     assert torch.allclose(y, x + block.ffn(block.ffn_norm(x)))
 
 
-def test_ffn_output_dropout_zero_is_identity_in_training():
+def test_ffn_output_dropout_zero_is_identity_in_training() -> None:
     block = _block_with_zero_attention(0.0).train()
     x, mask = _inputs()
     y1, _ = block(x, mask)

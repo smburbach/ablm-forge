@@ -261,6 +261,18 @@ def test_weighted_rejects_bad_cdr_ratios_length(tokenizer: AblmTokenizerFast) ->
         WeightedMaskingCollator(tokenizer=tokenizer, cdr_ratios=[1.0, 2.0])
 
 
+def test_weighted_rejects_mlm_false(tokenizer: AblmTokenizerFast) -> None:
+    with pytest.raises(ValueError, match="mlm=True"):
+        WeightedMaskingCollator(tokenizer=tokenizer, mlm=False)
+
+
+def test_region_aware_rejects_examples_without_region_mask(tokenizer: AblmTokenizerFast) -> None:
+    plain = tokenizer("MVE<cls>AA", return_special_tokens_mask=True)
+    collator = RegionAwareCollator(tokenizer=tokenizer, mlm=True, seed=1)
+    with pytest.raises(ValueError, match="region_mask"):
+        collator([dict(plain)])
+
+
 def test_weighted_region_weights_are_additive(tokenizer: AblmTokenizerFast) -> None:
     collator = WeightedMaskingCollator(tokenizer=tokenizer, cdr_ratios=3.0, nt_ratio=2.0)
     assert collator.region_weights.tolist() == [1.0, 3.0, 3.0, 3.0, 2.0, 4.0, 4.0, 4.0]

@@ -7,7 +7,10 @@ uniform eval collator and reduces logits to per-token CE/hits in
 `esm2/12_sota_convergence/training_mods/preferential_masking.py` in
 ablm-sweeps (eval-metrics half of the region-weighted-masking subsystem;
 originally from `esm2/05_preferential_masking_sweep/weighted_masking.py`'s
-`WeightedMaskingTrainer`).
+`WeightedMaskingTrainer`). The `seq_mutated`/templated splits and
+`masking_stats`/`MaskingStatsMixin` were ported from ablm-sweeps
+`esm2/training_mods/region_eval.py` and `weighted_masking.py`
+(`exp/rerun-v2026-09-17` @ `9a607d6`), matching the lineage note in `collators.py`.
 """
 
 from __future__ import annotations
@@ -48,9 +51,14 @@ def per_token_ce_and_hits(
 
 def compute_metrics(eval_pred: EvalPrediction) -> dict[str, float]:
     """Per-region CE and top-1 accuracy over the eval-masked positions, off RegionEvalMixin's
-    numpy arrays. A CDR level is regions {n, n+4}. CE_overall should equal HF's eval_loss, and the
-    four levels partition every scored token -- so they stop summing to it if a position with
-    region_mask < 0 was ever masked."""
+    numpy arrays. A CDR level is regions {n, n+4}.
+
+    The four CDR levels, and likewise ``templated`` + ``non_templated``, partition the scored
+    residue positions (region >= 0). ``overall`` additionally includes any scored separator
+    (region -1), so it is not the sum of the levels. ``CE_overall`` equals HF's ``eval_loss`` up
+    to padding/averaging. ``WeightedMaskingCollator`` never selects region -1, so under it the
+    partition is exact.
+    """
     # RegionEvalMixin.prediction_step hands Trainer a dict, not the ndarray/tuple
     # EvalPrediction.predictions is typed for; Any here reflects that runtime shape.
     predictions: Any = eval_pred.predictions
@@ -207,9 +215,13 @@ class MaskingStatsMixin:
     def log(self, logs: dict[str, float], *args: Any, **kwargs: Any) -> Any:
         batch = getattr(self, "_mask_batch", None)
         if batch is not None and "loss" in logs:
-            p = float(self.data_collator.mlm_probability)  # ty: ignore[unresolved-attribute]
-            logs = {
-                **logs,
-                **{f"mask/{k}": v for k, v in masking_stats(batch[0], batch[1], p).items()},
-            }
+            p = getattr(self.data_collator, "mlm_probability", None)  # ty: ignore[unresolved-attribute]
+            if p is not None:
+                logs = {
+                    **logs,
+                    **{
+                        f"mask/{k}": v
+                        for k, v in masking_stats(batch[0], batch[1], float(p)).items()
+                    },
+                }
         return super().log(logs, *args, **kwargs)  # ty: ignore[unresolved-attribute]

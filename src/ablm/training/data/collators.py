@@ -134,6 +134,8 @@ def _pad_paired_batch(
     ``tokenizer.pad`` zero-pads unknown columns and 0 is a real region code. ``seq_mutated``
     is one scalar per example, which ``tokenizer.pad`` cannot handle at all.
     """
+    if any("region_mask" not in ex for ex in examples):
+        raise ValueError("every example needs a region_mask; tokenize with add_region_mask first")
     region_masks = [ex["region_mask"] for ex in examples]
     mutated = [ex["seq_mutated"] for ex in examples] if "seq_mutated" in examples[0] else None
     drop = {"region_mask", "seq_mutated"}
@@ -202,6 +204,7 @@ class WeightedMaskingCollator(RegionAwareCollator):
     CDR non-templated ``cdr + nt - 1``. The 80/10/10 corruption and the seeded generator are
     the stock collator's, so only token selection differs from ``RegionAwareCollator``.
     Positions with region ``-1`` (specials, the chain separator) are never selected.
+    Requires ``mlm=True``; ``RegionAwareCollator`` covers the non-MLM path.
     """
 
     cdr_ratios: float | list[float] = 1.0
@@ -210,6 +213,8 @@ class WeightedMaskingCollator(RegionAwareCollator):
 
     def __post_init__(self) -> None:
         super().__post_init__()
+        if not self.mlm:
+            raise ValueError("WeightedMaskingCollator requires mlm=True; use RegionAwareCollator")
         cdr = self.cdr_ratios
         ratios = [float(cdr)] * 3 if isinstance(cdr, (int, float)) else [float(r) for r in cdr]
         if len(ratios) != 3:
