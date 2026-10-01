@@ -30,6 +30,8 @@ class AblmBlock(nn.Module):
     gradient checkpoint dispatch.
     """
 
+    alpha: torch.Tensor
+
     def __init__(self, config: AblmConfig, layer_idx: int) -> None:
         super().__init__()
 
@@ -124,9 +126,9 @@ class AblmBlock(nn.Module):
             y = h + self.alpha * ffn_out
         elif self.norm_strategy == "hybrid":
             # Hybrid reuses Norm(h) as both FFN input and FFN-side residual stream.
-            y = h_norm + self.alpha * ffn_out  # ty: ignore[unsupported-operator]  # alpha is a registered Tensor buffer
+            y = h_norm + self.alpha * ffn_out
         else:  # "pre" or "post_sdpa"
-            y = h + self.alpha * ffn_out  # ty: ignore[unsupported-operator]  # alpha is a registered Tensor buffer
+            y = h + self.alpha * ffn_out
 
         return y, attn_weights
 

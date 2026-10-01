@@ -31,8 +31,15 @@ def tokenizer() -> AblmTokenizerFast:
 
 
 def _make_example(
-    tokenizer, heavy_seq, heavy_cdr, heavy_nt, light_seq, light_cdr, light_nt, mutations=None
-):
+    tokenizer: AblmTokenizerFast,
+    heavy_seq: str,
+    heavy_cdr: str,
+    heavy_nt: str,
+    light_seq: str,
+    light_cdr: str,
+    light_nt: str,
+    mutations: tuple[str, str] | None = None,
+) -> dict:
     example = {
         "seq:0": heavy_seq,
         "cdr:0": heavy_cdr,
@@ -49,7 +56,7 @@ def _make_example(
 
 
 @pytest.fixture
-def paired_example(tokenizer) -> dict:
+def paired_example(tokenizer: AblmTokenizerFast) -> dict:
     """20 heavy residues (10-14 are CDR1) + 20 light residues (all framework)."""
     return _make_example(
         tokenizer,
@@ -63,7 +70,7 @@ def paired_example(tokenizer) -> dict:
 
 
 @pytest.fixture
-def paired_examples(tokenizer) -> list[dict]:
+def paired_examples(tokenizer: AblmTokenizerFast) -> list[dict]:
     """Four variable-length examples, two mutated, exercising padding and seq_mutated."""
     return [
         _make_example(
@@ -98,15 +105,15 @@ def paired_examples(tokenizer) -> list[dict]:
 # --- pair_mask / add_region_mask ---------------------------------------------------------
 
 
-def test_pair_mask_wraps_and_separates_regions():
+def test_pair_mask_wraps_and_separates_regions() -> None:
     assert pair_mask([1, 2, 3], [4, 5]) == [-1, 1, 2, 3, -1, 4, 5, -1]
 
 
-def test_pair_mask_custom_ignore_index():
+def test_pair_mask_custom_ignore_index() -> None:
     assert pair_mask([1], [2], ignore_index=-2) == [-2, 1, -2, 2, -2]
 
 
-def test_add_region_mask_is_aligned_and_length_matched(paired_example):
+def test_add_region_mask_is_aligned_and_length_matched(paired_example: dict) -> None:
     assert len(paired_example["region_mask"]) == len(paired_example["input_ids"])
     assert paired_example["region_mask"][0] == -1
     assert paired_example["region_mask"][_SEPARATOR_INDEX] == -1
@@ -114,12 +121,12 @@ def test_add_region_mask_is_aligned_and_length_matched(paired_example):
     assert "seq_mutated" not in paired_example
 
 
-def test_add_region_mask_encodes_cdr_and_shm_regions(tokenizer):
+def test_add_region_mask_encodes_cdr_and_shm_regions(tokenizer: AblmTokenizerFast) -> None:
     example = _make_example(tokenizer, "MMEE", "0011", "0000", "AA", "00", "01")
     assert example["region_mask"] == [-1, 0, 0, 1, 1, -1, 0, 4, -1]
 
 
-def test_add_region_mask_seq_mutated_is_heavy_chain_only(tokenizer):
+def test_add_region_mask_seq_mutated_is_heavy_chain_only(tokenizer: AblmTokenizerFast) -> None:
     assert (
         _make_example(tokenizer, "MM", "00", "00", "A", "0", "0", mutations=(0, 7))["seq_mutated"]
         == 0
@@ -130,7 +137,7 @@ def test_add_region_mask_seq_mutated_is_heavy_chain_only(tokenizer):
     )
 
 
-def test_add_region_mask_mismatched_lengths_raise(tokenizer):
+def test_add_region_mask_mismatched_lengths_raise(tokenizer: AblmTokenizerFast) -> None:
     example = {"seq:0": "MM", "cdr:0": "0", "nt:0": "00", "seq:1": "A", "cdr:1": "0", "nt:1": "0"}
     with pytest.raises(ValueError):
         add_region_mask(example, tokenizer, seq_col="seq", cdr_col="cdr", nt_col="nt")
@@ -139,7 +146,9 @@ def test_add_region_mask_mismatched_lengths_raise(tokenizer):
 # --- RegionAwareCollator ----------------------------------------------------------------
 
 
-def test_region_aware_keeps_side_channels_through_padding(tokenizer, paired_examples):
+def test_region_aware_keeps_side_channels_through_padding(
+    tokenizer: AblmTokenizerFast, paired_examples: list[dict]
+) -> None:
     collator = RegionAwareCollator(tokenizer=tokenizer, mlm=True, mlm_probability=0.15, seed=1)
     batch = collator(paired_examples)
     pad = batch["input_ids"] == tokenizer.pad_token_id
@@ -150,12 +159,16 @@ def test_region_aware_keeps_side_channels_through_padding(tokenizer, paired_exam
     assert batch["seq_mutated"].tolist() == [0, 1, 1, 0]
 
 
-def test_region_aware_without_mutation_col_has_no_seq_mutated(tokenizer, paired_example):
+def test_region_aware_without_mutation_col_has_no_seq_mutated(
+    tokenizer: AblmTokenizerFast, paired_example: dict
+) -> None:
     collator = RegionAwareCollator(tokenizer=tokenizer, mlm=True, seed=1)
     assert "seq_mutated" not in collator([paired_example, paired_example])
 
 
-def test_region_aware_masks_exactly_like_the_stock_collator(tokenizer, paired_examples):
+def test_region_aware_masks_exactly_like_the_stock_collator(
+    tokenizer: AblmTokenizerFast, paired_examples: list[dict]
+) -> None:
     """Same seed, same examples minus the side channels -> identical input_ids and labels."""
     ours = RegionAwareCollator(
         tokenizer=tokenizer, mlm=True, mlm_probability=0.15, seed=7, pad_to_multiple_of=8
@@ -173,7 +186,9 @@ def test_region_aware_masks_exactly_like_the_stock_collator(tokenizer, paired_ex
     assert torch.equal(a["labels"], b["labels"])
 
 
-def test_region_aware_mlm_false_uses_input_ids_as_labels(tokenizer, paired_examples):
+def test_region_aware_mlm_false_uses_input_ids_as_labels(
+    tokenizer: AblmTokenizerFast, paired_examples: list[dict]
+) -> None:
     collator = RegionAwareCollator(tokenizer=tokenizer, mlm=False)
     batch = collator(paired_examples)
     pad = batch["input_ids"] == tokenizer.pad_token_id
@@ -185,7 +200,9 @@ def test_region_aware_mlm_false_uses_input_ids_as_labels(tokenizer, paired_examp
 # --- seeding (both collators) -------------------------------------------------------------
 
 
-def _collators(tokenizer, seed):
+def _collators(
+    tokenizer: AblmTokenizerFast, seed: int | None
+) -> list[RegionAwareCollator | WeightedMaskingCollator]:
     return [
         RegionAwareCollator(tokenizer=tokenizer, mlm=True, mlm_probability=0.15, seed=seed),
         *[
@@ -203,7 +220,9 @@ def _collators(tokenizer, seed):
 
 
 @pytest.mark.parametrize("which", range(4))
-def test_seeded_collators_ignore_global_rng(tokenizer, paired_examples, which):
+def test_seeded_collators_ignore_global_rng(
+    tokenizer: AblmTokenizerFast, paired_examples: list[dict], which: int
+) -> None:
     torch.manual_seed(8)
     a = _collators(tokenizer, seed=12345)[which](paired_examples)
     torch.manual_seed(16)
@@ -213,14 +232,18 @@ def test_seeded_collators_ignore_global_rng(tokenizer, paired_examples, which):
 
 
 @pytest.mark.parametrize("which", range(4))
-def test_different_seeds_give_different_masks(tokenizer, paired_examples, which):
+def test_different_seeds_give_different_masks(
+    tokenizer: AblmTokenizerFast, paired_examples: list[dict], which: int
+) -> None:
     a = _collators(tokenizer, seed=1)[which](paired_examples)
     b = _collators(tokenizer, seed=2)[which](paired_examples)
     assert not torch.equal(a["labels"], b["labels"])
 
 
 @pytest.mark.parametrize("which", range(4))
-def test_unseeded_collators_follow_global_rng(tokenizer, paired_examples, which):
+def test_unseeded_collators_follow_global_rng(
+    tokenizer: AblmTokenizerFast, paired_examples: list[dict], which: int
+) -> None:
     torch.manual_seed(3)
     a = _collators(tokenizer, seed=None)[which](paired_examples)
     torch.manual_seed(3)
@@ -231,17 +254,17 @@ def test_unseeded_collators_follow_global_rng(tokenizer, paired_examples, which)
 # --- WeightedMaskingCollator ----------------------------------------------------------------
 
 
-def test_weighted_rejects_bad_cdr_ratios_length(tokenizer):
+def test_weighted_rejects_bad_cdr_ratios_length(tokenizer: AblmTokenizerFast) -> None:
     with pytest.raises(ValueError, match="cdr_ratios"):
         WeightedMaskingCollator(tokenizer=tokenizer, cdr_ratios=[1.0, 2.0])
 
 
-def test_weighted_region_weights_are_additive(tokenizer):
+def test_weighted_region_weights_are_additive(tokenizer: AblmTokenizerFast) -> None:
     collator = WeightedMaskingCollator(tokenizer=tokenizer, cdr_ratios=3.0, nt_ratio=2.0)
     assert collator.region_weights.tolist() == [1.0, 3.0, 3.0, 3.0, 2.0, 4.0, 4.0, 4.0]
 
 
-def test_weighted_count_mode_accepts_strings(tokenizer):
+def test_weighted_count_mode_accepts_strings(tokenizer: AblmTokenizerFast) -> None:
     assert (
         WeightedMaskingCollator(tokenizer=tokenizer, count_mode="exact").count_mode
         is CountMode.EXACT
@@ -249,7 +272,9 @@ def test_weighted_count_mode_accepts_strings(tokenizer):
 
 
 @pytest.mark.parametrize("mode", list(CountMode))
-def test_weighted_never_selects_region_minus_one(tokenizer, paired_example, mode):
+def test_weighted_never_selects_region_minus_one(
+    tokenizer: AblmTokenizerFast, paired_example: dict, mode: CountMode
+) -> None:
     collator = WeightedMaskingCollator(
         tokenizer=tokenizer,
         mlm=True,
@@ -268,7 +293,9 @@ def test_weighted_never_selects_region_minus_one(tokenizer, paired_example, mode
 
 
 @pytest.mark.parametrize("mlm_probability", [0.15, 0.4])
-def test_exact_count_is_exact(tokenizer, paired_example, mlm_probability):
+def test_exact_count_is_exact(
+    tokenizer: AblmTokenizerFast, paired_example: dict, mlm_probability: float
+) -> None:
     n_valid = sum(1 for r in paired_example["region_mask"] if r >= 0)
     collator = WeightedMaskingCollator(
         tokenizer=tokenizer,
@@ -285,7 +312,9 @@ def test_exact_count_is_exact(tokenizer, paired_example, mlm_probability):
 
 
 @pytest.mark.parametrize("mode", [CountMode.BINOMIAL, CountMode.BERNOULLI])
-def test_variable_count_modes_vary_and_average_to_np(tokenizer, paired_example, mode):
+def test_variable_count_modes_vary_and_average_to_np(
+    tokenizer: AblmTokenizerFast, paired_example: dict, mode: CountMode
+) -> None:
     n_valid = sum(1 for r in paired_example["region_mask"] if r >= 0)
     collator = WeightedMaskingCollator(
         tokenizer=tokenizer, mlm=True, mlm_probability=0.3, cdr_ratios=1.0, count_mode=mode, seed=5
@@ -297,7 +326,9 @@ def test_variable_count_modes_vary_and_average_to_np(tokenizer, paired_example, 
     assert abs(counts.mean().item() - n_valid * 0.3) < 0.5
 
 
-def test_binomial_mode_masks_at_least_one_token_on_short_sequences(tokenizer):
+def test_binomial_mode_masks_at_least_one_token_on_short_sequences(
+    tokenizer: AblmTokenizerFast,
+) -> None:
     tiny = _make_example(tokenizer, "MVE", "000", "000", "A", "0", "0")
     collator = WeightedMaskingCollator(
         tokenizer=tokenizer, mlm=True, mlm_probability=0.05, count_mode=CountMode.BINOMIAL, seed=1
@@ -306,7 +337,7 @@ def test_binomial_mode_masks_at_least_one_token_on_short_sequences(tokenizer):
         assert ((collator([tiny] * 8)["labels"] != -100).sum(dim=-1) >= 1).all()
 
 
-def test_bernoulli_mode_realises_weight_ratio(tokenizer):
+def test_bernoulli_mode_realises_weight_ratio(tokenizer: AblmTokenizerFast) -> None:
     """CDR masking rate / framework masking rate equals the weight ratio under BERNOULLI."""
     example = _make_example(
         tokenizer, "M" * 60 + "E" * 60, "0" * 60 + "1" * 60, "0" * 120, "A" * 60, "0" * 60, "0" * 60
@@ -329,7 +360,9 @@ def test_bernoulli_mode_realises_weight_ratio(tokenizer):
     assert cdr_rate / fw_rate == pytest.approx(3.0, abs=0.25)
 
 
-def test_replacement_split_is_roughly_80_10_10(tokenizer, paired_example):
+def test_replacement_split_is_roughly_80_10_10(
+    tokenizer: AblmTokenizerFast, paired_example: dict
+) -> None:
     collator = WeightedMaskingCollator(
         tokenizer=tokenizer, mlm=True, mlm_probability=0.5, count_mode=CountMode.EXACT, seed=3
     )

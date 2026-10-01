@@ -8,6 +8,7 @@ binomial top-k 0.1500 / 1.013 / 2.68; weighted Bernoulli 0.1500 / 0.973 / 2.98.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pyarrow.parquet as pq
 import pytest
@@ -22,6 +23,9 @@ from ablm.training.data import (
     add_region_mask,
     masking_stats,
 )
+
+if TYPE_CHECKING:
+    from transformers import DataCollatorForLanguageModeling
 
 FIXTURE = Path(__file__).parents[2] / "fixtures" / "training" / "eval-25k_v2026-09-29.parquet"
 N_ROWS = 2048
@@ -59,7 +63,7 @@ def tokenized_rows() -> list[dict]:
     ]
 
 
-def _aggregate(collator, rows):
+def _aggregate(collator: DataCollatorForLanguageModeling, rows: list[dict]) -> dict[str, float]:
     labels, regions = [], []
     for i in range(0, len(rows), BATCH):
         batch = collator(rows[i : i + BATCH])
@@ -75,11 +79,11 @@ def _aggregate(collator, rows):
     )
 
 
-def _cdr_fw_ratio(stats):
+def _cdr_fw_ratio(stats: dict[str, float]) -> float:
     return stats["rate_cdr_templated"] / stats["rate_fw_templated"]
 
 
-def test_stock_uniform(tokenized_rows):
+def test_stock_uniform(tokenized_rows: list[dict]) -> None:
     s = _aggregate(
         RegionAwareCollator(tokenizer=AblmTokenizerFast(), mlm=True, mlm_probability=P, seed=12345),
         tokenized_rows,
@@ -97,7 +101,12 @@ def test_stock_uniform(tokenized_rows):
         (CountMode.BERNOULLI, (0.88, 1.06), (2.85, 3.12)),
     ],
 )
-def test_weighted_modes_at_cdr3_nt1(tokenized_rows, mode, z_sd, ratio):
+def test_weighted_modes_at_cdr3_nt1(
+    tokenized_rows: list[dict],
+    mode: CountMode,
+    z_sd: tuple[float, float],
+    ratio: tuple[float, float],
+) -> None:
     collator = WeightedMaskingCollator(
         tokenizer=AblmTokenizerFast(),
         mlm=True,
@@ -114,7 +123,7 @@ def test_weighted_modes_at_cdr3_nt1(tokenized_rows, mode, z_sd, ratio):
     assert set(TIERS) <= {k.removeprefix("rate_") for k in s if k.startswith("rate_")}
 
 
-def test_exact_at_weight_one_matches_stock_rates(tokenized_rows):
+def test_exact_at_weight_one_matches_stock_rates(tokenized_rows: list[dict]) -> None:
     s = _aggregate(
         WeightedMaskingCollator(
             tokenizer=AblmTokenizerFast(),
