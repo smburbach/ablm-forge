@@ -345,3 +345,78 @@ def test_replacement_split_is_roughly_80_10_10(tokenizer, paired_example):
         n_random += ((batch["input_ids"][0] != original) & masked & ~is_mask).sum().item()
     assert n_mask / n_total == pytest.approx(0.8, abs=0.05)
     assert n_random / n_total == pytest.approx(0.1, abs=0.05)
+
+
+# --- seeding: stream continuity and weight validation ---------------------------------------
+
+
+@pytest.mark.parametrize("which", range(4))
+def test_consecutive_batches_from_one_seeded_collator_differ(
+    tokenizer: AblmTokenizerFast, paired_examples: list[dict], which: int
+) -> None:
+    collator = _collators(tokenizer, seed=12345)[which]
+    a = collator(paired_examples)
+    b = collator(paired_examples)
+    assert not torch.equal(a["labels"], b["labels"])
+
+
+def test_region_aware_matches_stock_over_consecutive_calls(
+    tokenizer: AblmTokenizerFast, paired_examples: list[dict]
+) -> None:
+    ours = RegionAwareCollator(
+        tokenizer=tokenizer, mlm=True, mlm_probability=0.15, seed=7, pad_to_multiple_of=8
+    )
+    stock = DataCollatorForLanguageModeling(
+        tokenizer=tokenizer, mlm=True, mlm_probability=0.15, seed=7, pad_to_multiple_of=8
+    )
+    plain = [
+        {k: v for k, v in ex.items() if k not in ("region_mask", "seq_mutated")}
+        for ex in paired_examples
+    ]
+    for _ in range(3):
+        a, b = ours(paired_examples), stock(plain)
+        assert torch.equal(a["input_ids"], b["input_ids"])
+        assert torch.equal(a["labels"], b["labels"])
+
+
+@pytest.mark.parametrize("which", range(4))
+def test_unseeded_collators_change_with_the_global_seed(
+    tokenizer: AblmTokenizerFast, paired_examples: list[dict], which: int
+) -> None:
+    torch.manual_seed(3)
+    a = _collators(tokenizer, seed=None)[which](paired_examples)
+    torch.manual_seed(4)
+    b = _collators(tokenizer, seed=None)[which](paired_examples)
+    assert not torch.equal(a["labels"], b["labels"])
+
+
+def test_bernoulli_mean_count_is_n_valid_p_at_non_uniform_weights(
+    tokenizer: AblmTokenizerFast,
+) -> None:
+    example = _make_example(
+        tokenizer,
+        "M" * 60 + "E" * 60,
+        "0" * 60 + "1" * 60,
+        "0" * 120,
+        "A" * 60,
+        "0" * 60,
+        "0" * 60,
+    )
+    n_valid = sum(1 for r in example["region_mask"] if r >= 0)
+    collator = WeightedMaskingCollator(
+        tokenizer=tokenizer,
+        mlm=True,
+        mlm_probability=0.15,
+        cdr_ratios=3.0,
+        count_mode=CountMode.BERNOULLI,
+        seed=11,
+    )
+    counts = torch.cat(
+        [(collator([example] * 8)["labels"] != -100).sum(dim=-1) for _ in range(50)]
+    ).float()
+    assert abs(counts.mean().item() - n_valid * 0.15) < 0.6
+
+
+def test_weighted_rejects_negative_region_weights(tokenizer: AblmTokenizerFast) -> None:
+    with pytest.raises(ValueError, match="region weight"):
+        WeightedMaskingCollator(tokenizer=tokenizer, cdr_ratios=0.4, nt_ratio=0.5)

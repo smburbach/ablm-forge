@@ -217,6 +217,11 @@ class WeightedMaskingCollator(RegionAwareCollator):
         nt = float(self.nt_ratio)
         self.count_mode = CountMode(self.count_mode)
         self.region_weights = torch.tensor([1.0, *ratios, nt, *(c + nt - 1.0 for c in ratios)])
+        if (self.region_weights < 0).any():
+            raise ValueError(
+                f"region weights must be non-negative; cdr_ratios={ratios}, nt_ratio={nt} give "
+                f"{self.region_weights.tolist()}"
+            )
 
     def torch_call(self, examples: list[dict[str, Any]]) -> dict[str, Any]:
         if self.seed and self.generator is None:
