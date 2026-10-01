@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import pytest
 import torch
 
+from ablm import AblmConfig
 from ablm.model.layers.norm import AblmLayerNorm
 from ablm.model.layers.transformer import AblmBlock, AblmStack
 
@@ -396,3 +397,55 @@ def test_stack_padded_inputs_match_unpadded_at_real_positions():
         out_real, _, _ = stack(real_ids, attention_mask=mask_real)
         out_pad, _, _ = stack(pad_ids, attention_mask=mask_pad)
     assert torch.allclose(out_real, out_pad[:, :4, :], atol=1e-5)
+
+
+class _ZeroAttention(torch.nn.Module):
+    """Stands in for AblmAttention so only the FFN sublayer can perturb the output."""
+
+    def forward(
+        self, x: torch.Tensor, attention_mask: torch.Tensor, output_attentions: bool = False
+    ) -> tuple[torch.Tensor, None]:
+        return torch.zeros_like(x), None
+
+
+def _block_with_zero_attention(hidden_dropout: float) -> AblmBlock:
+    cfg = AblmConfig(
+        vocab_size=33,
+        hidden_size=32,
+        num_hidden_layers=2,
+        num_attention_heads=2,
+        intermediate_size=64,
+        hidden_dropout=hidden_dropout,
+    )
+    block = AblmBlock(cfg, layer_idx=0)
+    block.attention = _ZeroAttention()
+    return block
+
+
+def _inputs() -> tuple[torch.Tensor, torch.Tensor]:
+    torch.manual_seed(0)
+    return torch.randn(2, 8, 32), torch.ones(2, 8, dtype=torch.long)
+
+
+def test_ffn_output_dropout_is_live_in_training() -> None:
+    block = _block_with_zero_attention(0.5).train()
+    x, mask = _inputs()
+    y1, _ = block(x, mask)
+    y2, _ = block(x, mask)
+    assert not torch.allclose(y1, y2)
+
+
+def test_ffn_output_dropout_is_identity_in_eval() -> None:
+    block = _block_with_zero_attention(0.5).eval()
+    x, mask = _inputs()
+    y, _ = block(x, mask)
+    assert torch.allclose(y, x + block.ffn(block.ffn_norm(x)))
+
+
+def test_ffn_output_dropout_zero_is_identity_in_training() -> None:
+    block = _block_with_zero_attention(0.0).train()
+    x, mask = _inputs()
+    y1, _ = block(x, mask)
+    y2, _ = block(x, mask)
+    assert torch.equal(y1, y2)
+    assert torch.allclose(y1, x + block.ffn(block.ffn_norm(x)))

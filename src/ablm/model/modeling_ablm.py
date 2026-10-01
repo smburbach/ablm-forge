@@ -134,7 +134,7 @@ class AblmModel(AblmPreTrainedModel):
             if output_hidden_states is not None
             else self.config.output_hidden_states
         )
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = return_dict if return_dict is not None else self.config.return_dict
 
         last_hidden, hidden_states, attentions = self.backbone(
             input_ids=input_ids,
@@ -209,7 +209,7 @@ class AblmForMaskedLM(AblmPreTrainedModel):
         output_hidden_states: bool | None = None,
         return_dict: bool | None = None,
     ) -> MaskedLMOutput | tuple:
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = return_dict if return_dict is not None else self.config.return_dict
 
         outputs = self.ablm(
             input_ids=input_ids,
@@ -280,7 +280,7 @@ class AblmForSequenceClassification(AblmPreTrainedModel):
         output_hidden_states: bool | None = None,
         return_dict: bool | None = None,
     ) -> SequenceClassifierOutput | tuple:
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = return_dict if return_dict is not None else self.config.return_dict
 
         outputs = self.ablm(
             input_ids=input_ids,
@@ -389,7 +389,7 @@ class AblmForTokenClassification(AblmPreTrainedModel):
         output_hidden_states: bool | None = None,
         return_dict: bool | None = None,
     ) -> TokenClassifierOutput | tuple:
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = return_dict if return_dict is not None else self.config.return_dict
 
         outputs = self.ablm(
             input_ids=input_ids,

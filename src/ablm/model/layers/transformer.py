@@ -6,6 +6,7 @@ import math
 from typing import TYPE_CHECKING
 
 import torch
+import torch.nn.functional as F
 from torch import nn
 from torch.utils import checkpoint as torch_checkpoint
 
@@ -29,6 +30,8 @@ class AblmBlock(nn.Module):
     gradient checkpoint dispatch.
     """
 
+    alpha: torch.Tensor
+
     def __init__(self, config: AblmConfig, layer_idx: int) -> None:
         super().__init__()
 
@@ -36,6 +39,7 @@ class AblmBlock(nn.Module):
         self.num_hidden_layers = config.num_hidden_layers
         self.norm_strategy = config.norm_strategy
         self.residual_scaling = config.residual_scaling
+        self.hidden_dropout = float(config.hidden_dropout)
         self.gradient_checkpointing = bool(getattr(config, "gradient_checkpointing", False))
 
         if config.residual_scaling == "sqrt_num_layers":
@@ -115,7 +119,7 @@ class AblmBlock(nn.Module):
 
         # FFN sublayer.
         h_norm = self.ffn_norm(h)
-        ffn_out = self.ffn(h_norm)
+        ffn_out = F.dropout(self.ffn(h_norm), p=self.hidden_dropout, training=self.training)
 
         if self.norm_strategy == "sandwich":
             ffn_out = self.ffn_post_norm(ffn_out)

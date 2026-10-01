@@ -10,7 +10,13 @@ import torch
 from transformers import Trainer, TrainingArguments
 
 from ablm import AblmConfig, AblmForMaskedLM
-from ablm.training.data import RegionEvalMixin, compute_metrics, per_token_ce_and_hits
+from ablm.training.data import (
+    MaskingStatsMixin,
+    RegionEvalMixin,
+    compute_metrics,
+    masking_stats,
+    per_token_ce_and_hits,
+)
 
 # ---------------------------------------------------------------------------
 # per_token_ce_and_hits
@@ -78,16 +84,9 @@ def test_compute_metrics_returns_all_expected_keys():
     labels = [[5, 5, 5, 5]]  # all masked (none == -100)
     metrics = compute_metrics(_eval_pred(ce, region, hit, labels))
     expected_keys = {
-        "CE_overall",
-        "ACC_overall",
-        "CE_non_cdr",
-        "ACC_non_cdr",
-        "CE_cdr1",
-        "ACC_cdr1",
-        "CE_cdr2",
-        "ACC_cdr2",
-        "CE_cdr3",
-        "ACC_cdr3",
+        f"{m}_{s}"
+        for m in ("CE", "ACC")
+        for s in ("overall", "non_cdr", "cdr1", "cdr2", "cdr3", "templated", "non_templated")
     }
     assert set(metrics) == expected_keys
 
@@ -272,3 +271,126 @@ def test_region_eval_mixin_prediction_loss_only_skips_reduction(
     assert loss is not None
     # untouched by per_token_ce_and_hits: logits stay whatever the base Trainer returned
     assert not isinstance(logits, dict)
+
+
+# ---------------------------------------------------------------------------
+# seq_mutated split, masking_stats, side-channel stripping, MaskingStatsMixin
+# ---------------------------------------------------------------------------
+
+
+def test_compute_metrics_adds_mutation_split_when_present():
+    ce = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)
+    region = np.array([[0, 1], [4, 7]], dtype=np.int8)
+    hit = np.array([[1, 0], [0, 1]], dtype=np.int8)
+    labels = np.array([[5, 5], [5, 5]])
+    mutated = np.array([[0, 0], [1, 1]], dtype=np.int8)
+    pred = SimpleNamespace(
+        predictions={"ce": ce, "region": region, "hit": hit, "mutated": mutated},
+        label_ids=labels,
+    )
+    m = compute_metrics(pred)
+    assert m["CE_seq_unmutated"] == pytest.approx(1.5)
+    assert m["CE_seq_mutated"] == pytest.approx(3.5)
+    assert m["CE_templated"] == pytest.approx(1.5)
+    assert m["CE_non_templated"] == pytest.approx(3.5)
+
+
+def test_masking_stats_on_a_known_batch():
+    labels = torch.tensor([[-100, 7, -100, 7, -100, -100], [-100, -100, -100, 7, 7, -100]])
+    region = torch.tensor([[-1, 0, 0, 1, 5, -1], [-1, 0, 4, 4, 3, -1]])
+    s = masking_stats(labels, region, p=0.5)
+    assert s["mask_rate"] == pytest.approx(4 / 8)
+    assert s["rate_fw_templated"] == pytest.approx(1 / 3)
+    assert s["rate_cdr_templated"] == pytest.approx(2 / 2)
+    assert s["rate_fw_shm"] == pytest.approx(1 / 2)
+    assert s["rate_cdr_shm"] == pytest.approx(0 / 1)
+    assert s["count_z_sd"] == pytest.approx(0.0)
+
+
+def test_region_eval_mixin_strips_side_channels_in_training(tiny_model: AblmForMaskedLM, tmp_path):
+    """Forge's forward has no **kwargs: region_mask and seq_mutated must never reach it."""
+
+    class T(RegionEvalMixin, Trainer):
+        pass
+
+    args = TrainingArguments(output_dir=str(tmp_path), report_to=[], use_cpu=True)
+    trainer = T(model=tiny_model, args=args)
+    ids = torch.randint(4, 30, (2, 8))
+    inputs = {
+        "input_ids": ids,
+        "attention_mask": torch.ones_like(ids),
+        "labels": ids.clone(),
+        "region_mask": torch.zeros_like(ids),
+        "seq_mutated": torch.tensor([0, 1]),
+    }
+    loss = trainer.compute_loss(tiny_model, inputs)
+    assert torch.isfinite(loss)
+
+
+def test_region_eval_mixin_prediction_step_carries_mutated(tiny_model: AblmForMaskedLM, tmp_path):
+    class T(RegionEvalMixin, Trainer):
+        pass
+
+    trainer = T(model=tiny_model, args=TrainingArguments(output_dir=str(tmp_path), report_to=[]))
+    ids = torch.randint(4, 30, (2, 8))
+    inputs = {
+        "input_ids": ids,
+        "attention_mask": torch.ones_like(ids),
+        "labels": ids.clone(),
+        "region_mask": torch.zeros_like(ids),
+        "seq_mutated": torch.tensor([0, 1]),
+    }
+    _, out, _ = trainer.prediction_step(tiny_model, inputs, prediction_loss_only=False)
+    assert out["mutated"].shape == ids.shape
+    assert out["mutated"][0].tolist() == [0] * 8 and out["mutated"][1].tolist() == [1] * 8
+
+
+def test_masking_stats_mixin_logs_train_mask_keys(tiny_model: AblmForMaskedLM, tmp_path):
+    from datasets import Dataset
+
+    from ablm.model.tokenization_ablm import AblmTokenizerFast
+    from ablm.training.data import RegionAwareCollator, add_region_mask
+
+    tokenizer = AblmTokenizerFast()
+    rows = [
+        add_region_mask(
+            {
+                "s:0": "M" * 12,
+                "c:0": "0" * 12,
+                "n:0": "0" * 12,
+                "s:1": "A" * 8,
+                "c:1": "0" * 8,
+                "n:1": "0" * 8,
+            },
+            tokenizer,
+            seq_col="s",
+            cdr_col="c",
+            nt_col="n",
+        )
+        for _ in range(8)
+    ]
+    ds = Dataset.from_list(rows)
+
+    class T(MaskingStatsMixin, RegionEvalMixin, Trainer):
+        pass
+
+    trainer = T(
+        model=tiny_model,
+        args=TrainingArguments(
+            output_dir=str(tmp_path),
+            report_to=[],
+            max_steps=2,
+            logging_steps=1,
+            per_device_train_batch_size=4,
+            remove_unused_columns=False,
+        ),
+        train_dataset=ds,
+        data_collator=RegionAwareCollator(
+            tokenizer=tokenizer, mlm=True, mlm_probability=0.15, seed=1
+        ),
+    )
+    trainer.train()
+    logged = [e for e in trainer.state.log_history if "mask/mask_rate" in e]
+    assert logged, trainer.state.log_history
+    assert 0.0 < logged[-1]["mask/mask_rate"] < 0.5
+    assert "mask/rate_fw_templated" in logged[-1]
