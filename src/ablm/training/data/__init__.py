@@ -32,17 +32,25 @@ from .collators import (
     add_region_mask,
     pair_mask,
 )
-from .metrics import RegionEvalMixin, compute_metrics, per_token_ce_and_hits
+from .metrics import (
+    MaskingStatsMixin,
+    RegionEvalMixin,
+    compute_metrics,
+    masking_stats,
+    per_token_ce_and_hits,
+)
 
 __all__ = [
     "IGNORE",
     "TIERS",
     "CountMode",
+    "MaskingStatsMixin",
     "RegionAwareCollator",
     "RegionEvalMixin",
     "WeightedMaskingCollator",
     "add_region_mask",
     "compute_metrics",
+    "masking_stats",
     "pair_mask",
     "per_token_ce_and_hits",
 ]
