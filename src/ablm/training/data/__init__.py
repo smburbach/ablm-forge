@@ -1,21 +1,26 @@
-"""Region-weighted CDR masking, and the per-region eval metrics that read it back.
+"""Region-weighted CDR masking, and the readers that consume its side channels.
 
-The two halves share one contract and are kept together because nothing else
-enforces it: the collators write a `region_mask` onto every batch,
-and `RegionEvalMixin` / `compute_metrics` are its only consumers. No import binds
-them — the contract is the `region_mask` key itself — so colocation is what keeps
-the producer and consumer readable as one unit.
+The pieces share one contract and are kept together because nothing else enforces
+it: the collators write `region_mask` and `seq_mutated` onto every batch, and the
+readers below are their only consumers. No import binds them — the contract is the
+key names themselves — so colocation is what keeps the producers and consumers
+readable as one unit.
 
-`RegionAwareCollator` is the stock HF Bernoulli collator with `region_mask` /
-`seq_mutated` surviving dynamic padding; `WeightedMaskingCollator` biases selection
-toward CDR / SHM regions via `cdr_ratios` / `nt_ratio` under a `CountMode`.
+Two collators produce it. `RegionAwareCollator` is the stock HF Bernoulli collator
+with `region_mask` / `seq_mutated` surviving dynamic padding; it is the production
+collator, because exact-count masking costs +0.01447 on held-out donors.
+`WeightedMaskingCollator` biases selection toward CDR / SHM regions via `cdr_ratios` /
+`nt_ratio` under a `CountMode` (default `CountMode.BERNOULLI`).
 `add_region_mask` / `pair_mask` build the `region_mask` a training script attaches to
 each example before it reaches the collator.
 
+Two sets of readers consume it. `RegionEvalMixin` / `compute_metrics` are for eval:
 `RegionEvalMixin` is a composable `Trainer` mixin (the one sanctioned `Trainer`
-subclass; see AGENTS.md): it strips `region_mask` before `model.forward`, swaps in a
-uniform eval collator, and reduces each eval step's logits to per-token CE + hits for
-`compute_metrics` to aggregate by region.
+subclass; see AGENTS.md) that strips the side channels before `model.forward`, swaps
+in a uniform eval collator, and reduces each eval step's logits to per-token CE + hits
+for `compute_metrics` to aggregate by region. `MaskingStatsMixin` / `masking_stats`
+are for the train batch: they report the realised masking rates of the latest
+micro-batch.
 
 Data *loading* is deliberately not here — it is a handful of 🤗 `datasets` calls in
 the training script, so each run owns and can edit it.

@@ -8,6 +8,8 @@ realises the count distribution its `CountMode` promises.
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 import torch
 from transformers import DataCollatorForLanguageModeling
@@ -38,8 +40,8 @@ def _make_example(
     light_seq: str,
     light_cdr: str,
     light_nt: str,
-    mutations: tuple[str, str] | None = None,
-) -> dict:
+    mutations: tuple[int, int] | None = None,
+) -> dict[str, Any]:
     example = {
         "seq:0": heavy_seq,
         "cdr:0": heavy_cdr,
@@ -56,7 +58,7 @@ def _make_example(
 
 
 @pytest.fixture
-def paired_example(tokenizer: AblmTokenizerFast) -> dict:
+def paired_example(tokenizer: AblmTokenizerFast) -> dict[str, Any]:
     """20 heavy residues (10-14 are CDR1) + 20 light residues (all framework)."""
     return _make_example(
         tokenizer,
@@ -70,7 +72,7 @@ def paired_example(tokenizer: AblmTokenizerFast) -> dict:
 
 
 @pytest.fixture
-def paired_examples(tokenizer: AblmTokenizerFast) -> list[dict]:
+def paired_examples(tokenizer: AblmTokenizerFast) -> list[dict[str, Any]]:
     """Four variable-length examples, two mutated, exercising padding and seq_mutated."""
     return [
         _make_example(
@@ -113,7 +115,7 @@ def test_pair_mask_custom_ignore_index() -> None:
     assert pair_mask([1], [2], ignore_index=-2) == [-2, 1, -2, 2, -2]
 
 
-def test_add_region_mask_is_aligned_and_length_matched(paired_example: dict) -> None:
+def test_add_region_mask_is_aligned_and_length_matched(paired_example: dict[str, Any]) -> None:
     assert len(paired_example["region_mask"]) == len(paired_example["input_ids"])
     assert paired_example["region_mask"][0] == -1
     assert paired_example["region_mask"][_SEPARATOR_INDEX] == -1
@@ -147,7 +149,7 @@ def test_add_region_mask_mismatched_lengths_raise(tokenizer: AblmTokenizerFast) 
 
 
 def test_region_aware_keeps_side_channels_through_padding(
-    tokenizer: AblmTokenizerFast, paired_examples: list[dict]
+    tokenizer: AblmTokenizerFast, paired_examples: list[dict[str, Any]]
 ) -> None:
     collator = RegionAwareCollator(tokenizer=tokenizer, mlm=True, mlm_probability=0.15, seed=1)
     batch = collator(paired_examples)
@@ -160,14 +162,14 @@ def test_region_aware_keeps_side_channels_through_padding(
 
 
 def test_region_aware_without_mutation_col_has_no_seq_mutated(
-    tokenizer: AblmTokenizerFast, paired_example: dict
+    tokenizer: AblmTokenizerFast, paired_example: dict[str, Any]
 ) -> None:
     collator = RegionAwareCollator(tokenizer=tokenizer, mlm=True, seed=1)
     assert "seq_mutated" not in collator([paired_example, paired_example])
 
 
 def test_region_aware_masks_exactly_like_the_stock_collator(
-    tokenizer: AblmTokenizerFast, paired_examples: list[dict]
+    tokenizer: AblmTokenizerFast, paired_examples: list[dict[str, Any]]
 ) -> None:
     """Same seed, same examples minus the side channels -> identical input_ids and labels."""
     ours = RegionAwareCollator(
@@ -187,7 +189,7 @@ def test_region_aware_masks_exactly_like_the_stock_collator(
 
 
 def test_region_aware_mlm_false_uses_input_ids_as_labels(
-    tokenizer: AblmTokenizerFast, paired_examples: list[dict]
+    tokenizer: AblmTokenizerFast, paired_examples: list[dict[str, Any]]
 ) -> None:
     collator = RegionAwareCollator(tokenizer=tokenizer, mlm=False)
     batch = collator(paired_examples)
@@ -221,7 +223,7 @@ def _collators(
 
 @pytest.mark.parametrize("which", range(4))
 def test_seeded_collators_ignore_global_rng(
-    tokenizer: AblmTokenizerFast, paired_examples: list[dict], which: int
+    tokenizer: AblmTokenizerFast, paired_examples: list[dict[str, Any]], which: int
 ) -> None:
     torch.manual_seed(8)
     a = _collators(tokenizer, seed=12345)[which](paired_examples)
@@ -233,7 +235,7 @@ def test_seeded_collators_ignore_global_rng(
 
 @pytest.mark.parametrize("which", range(4))
 def test_different_seeds_give_different_masks(
-    tokenizer: AblmTokenizerFast, paired_examples: list[dict], which: int
+    tokenizer: AblmTokenizerFast, paired_examples: list[dict[str, Any]], which: int
 ) -> None:
     a = _collators(tokenizer, seed=1)[which](paired_examples)
     b = _collators(tokenizer, seed=2)[which](paired_examples)
@@ -242,7 +244,7 @@ def test_different_seeds_give_different_masks(
 
 @pytest.mark.parametrize("which", range(4))
 def test_unseeded_collators_follow_global_rng(
-    tokenizer: AblmTokenizerFast, paired_examples: list[dict], which: int
+    tokenizer: AblmTokenizerFast, paired_examples: list[dict[str, Any]], which: int
 ) -> None:
     torch.manual_seed(3)
     a = _collators(tokenizer, seed=None)[which](paired_examples)
@@ -273,7 +275,7 @@ def test_weighted_count_mode_accepts_strings(tokenizer: AblmTokenizerFast) -> No
 
 @pytest.mark.parametrize("mode", list(CountMode))
 def test_weighted_never_selects_region_minus_one(
-    tokenizer: AblmTokenizerFast, paired_example: dict, mode: CountMode
+    tokenizer: AblmTokenizerFast, paired_example: dict[str, Any], mode: CountMode
 ) -> None:
     collator = WeightedMaskingCollator(
         tokenizer=tokenizer,
@@ -294,7 +296,7 @@ def test_weighted_never_selects_region_minus_one(
 
 @pytest.mark.parametrize("mlm_probability", [0.15, 0.4])
 def test_exact_count_is_exact(
-    tokenizer: AblmTokenizerFast, paired_example: dict, mlm_probability: float
+    tokenizer: AblmTokenizerFast, paired_example: dict[str, Any], mlm_probability: float
 ) -> None:
     n_valid = sum(1 for r in paired_example["region_mask"] if r >= 0)
     collator = WeightedMaskingCollator(
@@ -313,7 +315,7 @@ def test_exact_count_is_exact(
 
 @pytest.mark.parametrize("mode", [CountMode.BINOMIAL, CountMode.BERNOULLI])
 def test_variable_count_modes_vary_and_average_to_np(
-    tokenizer: AblmTokenizerFast, paired_example: dict, mode: CountMode
+    tokenizer: AblmTokenizerFast, paired_example: dict[str, Any], mode: CountMode
 ) -> None:
     n_valid = sum(1 for r in paired_example["region_mask"] if r >= 0)
     collator = WeightedMaskingCollator(
@@ -361,7 +363,7 @@ def test_bernoulli_mode_realises_weight_ratio(tokenizer: AblmTokenizerFast) -> N
 
 
 def test_replacement_split_is_roughly_80_10_10(
-    tokenizer: AblmTokenizerFast, paired_example: dict
+    tokenizer: AblmTokenizerFast, paired_example: dict[str, Any]
 ) -> None:
     collator = WeightedMaskingCollator(
         tokenizer=tokenizer, mlm=True, mlm_probability=0.5, count_mode=CountMode.EXACT, seed=3
@@ -385,7 +387,7 @@ def test_replacement_split_is_roughly_80_10_10(
 
 @pytest.mark.parametrize("which", range(4))
 def test_consecutive_batches_from_one_seeded_collator_differ(
-    tokenizer: AblmTokenizerFast, paired_examples: list[dict], which: int
+    tokenizer: AblmTokenizerFast, paired_examples: list[dict[str, Any]], which: int
 ) -> None:
     collator = _collators(tokenizer, seed=12345)[which]
     a = collator(paired_examples)
@@ -394,7 +396,7 @@ def test_consecutive_batches_from_one_seeded_collator_differ(
 
 
 def test_region_aware_matches_stock_over_consecutive_calls(
-    tokenizer: AblmTokenizerFast, paired_examples: list[dict]
+    tokenizer: AblmTokenizerFast, paired_examples: list[dict[str, Any]]
 ) -> None:
     ours = RegionAwareCollator(
         tokenizer=tokenizer, mlm=True, mlm_probability=0.15, seed=7, pad_to_multiple_of=8
@@ -414,7 +416,7 @@ def test_region_aware_matches_stock_over_consecutive_calls(
 
 @pytest.mark.parametrize("which", range(4))
 def test_unseeded_collators_change_with_the_global_seed(
-    tokenizer: AblmTokenizerFast, paired_examples: list[dict], which: int
+    tokenizer: AblmTokenizerFast, paired_examples: list[dict[str, Any]], which: int
 ) -> None:
     torch.manual_seed(3)
     a = _collators(tokenizer, seed=None)[which](paired_examples)
