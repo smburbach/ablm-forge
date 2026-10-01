@@ -17,6 +17,9 @@ accumulates.
 - `data` — region-aware MLM collators (`RegionAwareCollator`, `WeightedMaskingCollator`)
   plus the per-region eval metrics that consume their `region_mask`. `RegionEvalMixin` is a
   composable Trainer *mixin*, mixed in only when you need per-region evaluation.
+- `preemption` — Slurm preemption safety (`PreemptionSafeMixin`, `PreemptionSafeTrainer`): JIT
+  checkpoint on SIGTERM, object-storage mirror/restore with `s5cmd`, DataLoader-worker shielding.
+  A tracked port of coreweave-docs `model-training/single-run/jit/preemption.py`.
 """
 
 from __future__ import annotations
@@ -43,6 +46,7 @@ from .optim import (
     build_muon_optimizer,
     split_muon_params,
 )
+from .preemption import PreemptionSafeMixin, PreemptionSafeTrainer
 
 __all__ = [
     "MUON_OPTIM",
@@ -53,6 +57,8 @@ __all__ = [
     "TIERS",
     "CountMode",
     "MaskingStatsMixin",
+    "PreemptionSafeMixin",
+    "PreemptionSafeTrainer",
     "RegionAwareCollator",
     "RegionEvalMixin",
     "WeightedMaskingCollator",

@@ -84,9 +84,10 @@ gated variants.
   schedules via `lr_scheduler_type`. Muon is built in the script with
   `build_muon_optimizer(model, ...)` and handed over via `optimizers=(opt, None)` —
   no `Trainer` subclass. Everything else composes as constructor args / callbacks
-  (`data_collator=`, `compute_metrics=`, `callbacks=`); the one exception is
-  `RegionEvalMixin`, mixed into a Trainer subclass only when you need per-region
-  eval. Don't override `training_step`/`compute_loss`/the loop.
+  (`data_collator=`, `compute_metrics=`, `callbacks=`); the two sanctioned mixins are
+  `RegionEvalMixin` (per-region eval) and `PreemptionSafeMixin` (`training/preemption/`:
+  wraps `__init__`, `train()`, `_get_dataloader` and adds `finish()` to survive Slurm
+  preemption). Don't override `training_step`/`compute_loss`/the loop.
 - **Everything under `training/` is a named concern that maps to a `Trainer` wiring
   point** — `optim/` to `optimizers=`, `data/` to `data_collator=` /
   `compute_metrics=`. Nothing lands loose in `training/` without a name: a new
@@ -95,6 +96,10 @@ gated variants.
   something here — that reasoning is what turns a package into `utils/`. Import from
   the subpackage (`from ablm.training.data import ...`), never from its modules, so
   the internal split stays rearrangeable.
+- **`training/preemption/` is a tracked port** of coreweave-docs
+  `model-training/single-run/jit/preemption.py` (currently `d748711`) plus an off-cluster
+  guard. Re-port upstream changes; don't hand-edit — forks of this code have drifted
+  silently before.
 - **Keep a contract's producer and consumer in the same subpackage.**
   `RegionAwareCollator` / `WeightedMaskingCollator` write `region_mask` and
   `seq_mutated` onto each batch and `RegionEvalMixin` / `compute_metrics` /
@@ -140,9 +145,12 @@ src/ablm/
     ├── optim/                  # -> optimizers=
     │   ├── muon.py             # CombinedOptimizer + build_muon_optimizer + param split
     │   └── distributed_muon.py # DDP-sharded Newton-Schulz
-    └── data/                   # -> data_collator= / compute_metrics=
-        ├── collators.py        # RegionAwareCollator (stock Bernoulli) + WeightedMaskingCollator (CountMode), write region_mask/seq_mutated
-        └── metrics.py          # RegionEvalMixin + compute_metrics + MaskingStatsMixin (read them)
+    ├── data/                   # -> data_collator= / compute_metrics=
+    │   ├── collators.py        # RegionAwareCollator (stock Bernoulli) + WeightedMaskingCollator (CountMode), write region_mask/seq_mutated
+    │   └── metrics.py          # RegionEvalMixin + compute_metrics + MaskingStatsMixin (read them)
+    └── preemption/             # -> Trainer mixin: JIT checkpoint on SIGTERM, object-storage mirror/restore
+        ├── object_storage.py   # s5cmd mirror/restore of the work dir, checkpoint discovery
+        └── trainer.py          # PreemptionSafeMixin + PreemptionSafeTrainer, sync callback, worker shield
 scripts/pretrain.py             # example training script: data loading + Trainer wiring
 tests/                          # pytest, mirrors src/
 ```
