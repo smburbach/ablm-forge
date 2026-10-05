@@ -14,18 +14,27 @@ accumulates.
   `DistributedMuon` on the 2D body weights + AdamW on the rest, wrapped in a
   `CombinedOptimizer`; hand it to the stock Trainer via `optimizers=(opt, None)`. No
   `Trainer` subclass is needed for the optimizer.
-- `data` — region-weighted CDR masking (`PreferentialMaskingCollator`) plus the
-  per-region eval metrics that consume its `region_mask`. `RegionEvalMixin` is a
+- `data` — region-aware MLM collators (`RegionAwareCollator`, `WeightedMaskingCollator`)
+  plus the per-region eval metrics that consume their `region_mask`. `RegionEvalMixin` is a
   composable Trainer *mixin*, mixed in only when you need per-region evaluation.
+- `preemption` — Slurm preemption safety (`PreemptionSafeMixin`, `PreemptionSafeTrainer`): JIT
+  checkpoint on SIGTERM, object-storage mirror/restore with `s5cmd`, DataLoader-worker shielding.
+  A tracked port of coreweave-docs `model-training/single-run/jit/preemption.py`.
 """
 
 from __future__ import annotations
 
 from .data import (
-    PreferentialMaskingCollator,
+    IGNORE,
+    TIERS,
+    CountMode,
+    MaskingStatsMixin,
+    RegionAwareCollator,
     RegionEvalMixin,
+    WeightedMaskingCollator,
     add_region_mask,
     compute_metrics,
+    masking_stats,
     pair_mask,
     per_token_ce_and_hits,
 )
@@ -37,17 +46,26 @@ from .optim import (
     build_muon_optimizer,
     split_muon_params,
 )
+from .preemption import PreemptionSafeMixin, PreemptionSafeTrainer
 
 __all__ = [
     "MUON_OPTIM",
     "MUON_PARAM_PREFIX",
     "CombinedOptimizer",
     "DistributedMuon",
-    "PreferentialMaskingCollator",
+    "IGNORE",
+    "TIERS",
+    "CountMode",
+    "MaskingStatsMixin",
+    "PreemptionSafeMixin",
+    "PreemptionSafeTrainer",
+    "RegionAwareCollator",
     "RegionEvalMixin",
+    "WeightedMaskingCollator",
     "add_region_mask",
     "build_muon_optimizer",
     "compute_metrics",
+    "masking_stats",
     "pair_mask",
     "per_token_ce_and_hits",
     "split_muon_params",

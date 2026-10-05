@@ -42,7 +42,9 @@ RoPE, SwiGLU, **bias-free** linear layers and layer norms (`norm_bias=false`,
 `ffn_bias=false`, `attention_bias=false`), **no QK-norm**, **no residual
 scaling**, and **no token dropout** (`token_dropout=false` — ESM-2 had it; ESM-C
 removed it as redundant under Pre-LN. The ESM-2 behavior is implemented and
-available via `token_dropout=true`). ESM-C sizes are head_dim-64 at 30L/960,
+available via `token_dropout=true`). `hidden_dropout` applies after the attention
+output projection and after the FFN output (ESM-2's two residual writers); ESM-C's
+default is 0.0. ESM-C sizes are head_dim-64 at 30L/960,
 36L/1152, 80L/2560 (300M / 600M / 6B) — set them directly on `AblmConfig`. The
 tokenizer is bit-for-bit ESM-C (33-token vocab). Tests
 `tests/model/test_esm_alignment.py` pin this alignment — keep them green when
@@ -82,9 +84,10 @@ gated variants.
   schedules via `lr_scheduler_type`. Muon is built in the script with
   `build_muon_optimizer(model, ...)` and handed over via `optimizers=(opt, None)` —
   no `Trainer` subclass. Everything else composes as constructor args / callbacks
-  (`data_collator=`, `compute_metrics=`, `callbacks=`); the one exception is
-  `RegionEvalMixin`, mixed into a Trainer subclass only when you need per-region
-  eval. Don't override `training_step`/`compute_loss`/the loop.
+  (`data_collator=`, `compute_metrics=`, `callbacks=`); the two sanctioned mixins are
+  `RegionEvalMixin` (per-region eval) and `PreemptionSafeMixin` (`training/preemption/`:
+  wraps `__init__`, `train()`, `_get_dataloader` and adds `finish()` to survive Slurm
+  preemption). Don't override `training_step`/`compute_loss`/the loop.
 - **Everything under `training/` is a named concern that maps to a `Trainer` wiring
   point** — `optim/` to `optimizers=`, `data/` to `data_collator=` /
   `compute_metrics=`. Nothing lands loose in `training/` without a name: a new
@@ -93,12 +96,19 @@ gated variants.
   something here — that reasoning is what turns a package into `utils/`. Import from
   the subpackage (`from ablm.training.data import ...`), never from its modules, so
   the internal split stays rearrangeable.
+- **`training/preemption/` is a tracked port** of coreweave-docs
+  `model-training/single-run/jit/preemption.py` (currently `d748711`) plus an off-cluster
+  guard. Re-port upstream changes; don't hand-edit — forks of this code have drifted
+  silently before.
 - **Keep a contract's producer and consumer in the same subpackage.**
-  `PreferentialMaskingCollator` writes `region_mask` onto each batch and
-  `RegionEvalMixin` / `compute_metrics` are its only readers; no import binds them,
+  `RegionAwareCollator` / `WeightedMaskingCollator` write `region_mask` and
+  `seq_mutated` onto each batch and `RegionEvalMixin` / `compute_metrics` /
+  `MaskingStatsMixin` are their only readers; no import binds them,
   so colocation in `training/data/` is the only thing keeping that contract legible.
   Splitting the two by pipeline phase is what previously put them in two different
-  top-level packages.
+  top-level packages. A seeded HF collator creates its generator lazily in
+  `torch_call`; any override must call `create_rng()` the same way or `seed` is
+  silently inert.
 - **Attention is SDPA + a manual fallback** in `ablm/model/layers/attention.py`.
   Don't reintroduce a kernel registry / explicit flash-attn integration: SDPA
   already auto-selects the fused backend.
@@ -135,9 +145,12 @@ src/ablm/
     ├── optim/                  # -> optimizers=
     │   ├── muon.py             # CombinedOptimizer + build_muon_optimizer + param split
     │   └── distributed_muon.py # DDP-sharded Newton-Schulz
-    └── data/                   # -> data_collator= / compute_metrics=
-        ├── collators.py        # PreferentialMaskingCollator (writes region_mask)
-        └── metrics.py          # RegionEvalMixin + compute_metrics (read region_mask)
+    ├── data/                   # -> data_collator= / compute_metrics=
+    │   ├── collators.py        # RegionAwareCollator (stock Bernoulli) + WeightedMaskingCollator (CountMode), write region_mask/seq_mutated
+    │   └── metrics.py          # RegionEvalMixin + compute_metrics + MaskingStatsMixin (read them)
+    └── preemption/             # -> Trainer mixin: JIT checkpoint on SIGTERM, object-storage mirror/restore
+        ├── object_storage.py   # s5cmd mirror/restore of the work dir, checkpoint discovery
+        └── trainer.py          # PreemptionSafeMixin + PreemptionSafeTrainer, sync callback, worker shield
 scripts/pretrain.py             # example training script: data loading + Trainer wiring
 tests/                          # pytest, mirrors src/
 ```
