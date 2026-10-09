@@ -44,6 +44,7 @@ class AblmPreTrainedModel(PreTrainedModel):
     supports_gradient_checkpointing = True
     _no_split_modules = ["AblmBlock"]
     _supports_sdpa = True
+    _supports_flash_attn = True
 
     def _init_weights(self, module: nn.Module) -> None:
         """Initialize weights (truncated normal; residual-writer scaling).
