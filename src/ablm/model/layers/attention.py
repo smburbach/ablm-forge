@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 import torch
 from torch import nn
 from torch.nn import functional as F
-from transformers.integrations.flash_attention import flash_attention_forward
+from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
 
 from .norm import make_norm
 from .rope import RotaryEmbedding
@@ -167,7 +167,7 @@ class AblmAttention(nn.Module):
                     f"flash_attention_2 needs bfloat16 or float16 inputs, got {q.dtype}; "
                     "train under bf16 autocast."
                 )
-            out, _ = flash_attention_forward(
+            out, _ = ALL_ATTENTION_FUNCTIONS["flash_attention_2"](
                 self,
                 q,
                 k,
