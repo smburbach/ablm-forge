@@ -1,11 +1,12 @@
 """Multi-head self-attention.
 
-The fast path is `torch.nn.functional.scaled_dot_product_attention`, which at
-runtime auto-selects the fastest fused backend (FlashAttention / cuDNN /
-memory-efficient on CUDA, math on CPU) — so this single call *is* the attention
-optimization; no kernel registry or `torch.compile` is needed. The only reason
-for a second path is `output_attentions=True`: SDPA does not expose the
-attention weights, so a manual fp32 softmax runs instead.
+The default path is `torch.nn.functional.scaled_dot_product_attention`. With the
+key-padding mask every batch carries, SDPA cannot use its flash backend (it rejects
+any `attn_mask`) or cuDNN (it needs dropout in 1/16 steps), so on CUDA it runs the
+memory-efficient kernel; CPU uses the math kernel. `attn_implementation=
+"flash_attention_2"` opts into HF's `flash_attention_forward` instead (unpad ->
+`flash_attn_varlen_func` -> re-pad), the kernel stock ESM2 trains with. A manual
+fp32 softmax runs for `output_attentions=True`, which neither fused path exposes.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from typing import TYPE_CHECKING
 import torch
 from torch import nn
 from torch.nn import functional as F
+from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
 
 from .norm import make_norm
 from .rope import RotaryEmbedding
@@ -59,6 +61,9 @@ class AblmAttention(nn.Module):
                 f"hidden_size ({hidden_size})."
             )
 
+        # PreTrainedModel.__init__ resolves `_attn_implementation` on this shared config object.
+        self.config = config
+        self.is_causal = False
         self.hidden_size = hidden_size
         self.num_attention_heads = num_heads
         self.head_dim = head_dim
@@ -152,16 +157,32 @@ class AblmAttention(nn.Module):
         v = self.v_norm(v)
         q, k = self.rotary.apply_rotary(q, k)
 
+        dropout_p = self.attention_dropout if self.training else 0.0
+        attn = None
         if output_attentions:
             out, attn = self._manual_attention(q, k, v, attention_mask)
+        elif getattr(self.config, "_attn_implementation", None) == "flash_attention_2":
+            if q.dtype not in (torch.bfloat16, torch.float16):
+                raise ValueError(
+                    f"flash_attention_2 needs bfloat16 or float16 inputs, got {q.dtype}; "
+                    "train under bf16 autocast."
+                )
+            out, _ = ALL_ATTENTION_FUNCTIONS["flash_attention_2"](
+                self,
+                q,
+                k,
+                v,
+                attention_mask,
+                dropout=dropout_p,
+                scaling=1.0 / math.sqrt(self.head_dim),
+            )
+            out = out.transpose(1, 2)  # (B, T, H, d_head) -> (B, H, T, d_head)
         else:
             # (B, 1, 1, T) boolean key-padding mask (True = attend). Masking only
             # keys keeps every query row non-empty, so softmax never sees an
-            # all-masked row. SDPA auto-selects the fastest fused backend.
+            # all-masked row.
             key_mask = (attention_mask == 1)[:, None, None, :]
-            dropout_p = self.attention_dropout if self.training else 0.0
             out = F.scaled_dot_product_attention(q, k, v, attn_mask=key_mask, dropout_p=dropout_p)
-            attn = None
 
         out = self._output_projection(out)
         out = F.dropout(out, p=self.hidden_dropout, training=self.training)

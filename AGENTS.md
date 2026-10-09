@@ -61,10 +61,13 @@ upfront allow-list. When `intermediate_size` is left `None` the
 derivation is variant-aware: 4x hidden for `gelu`, ~8/3 x hidden for the
 gated variants.
 
-> Attention is just `F.scaled_dot_product_attention`, which auto-selects the
-> fastest fused backend (FlashAttention / cuDNN / mem-efficient) at runtime — no
-> kernel registry, no torch.compile needed. A manual fp32-softmax path runs only
-> for `output_attentions=True` (SDPA can't return weights).
+> Attention defaults to `F.scaled_dot_product_attention`. With forge's key-padding
+> mask SDPA can't use its flash backend (it rejects any `attn_mask`) or cuDNN (it
+> needs dropout in 1/16 steps), so on CUDA it runs memory-efficient attention
+> (profiled on B200, ablm-sweeps job 25132). `attn_implementation="flash_attention_2"`
+> opts into HF's `flash_attention_forward` (unpadded `flash_attn_varlen_func`), the
+> kernel stock ESM2 trains with; it needs bf16/fp16 inputs and raises otherwise. A
+> manual fp32-softmax path runs only for `output_attentions=True`.
 
 - **Default presets** live in `model/presets.py` (`from_preset("300m")`,
   `AblmConfig.from_preset(...)`): a muP-correct, kernel-optimized ladder
@@ -109,9 +112,12 @@ gated variants.
   top-level packages. A seeded HF collator creates its generator lazily in
   `torch_call`; any override must call `create_rng()` the same way or `seed` is
   silently inert.
-- **Attention is SDPA + a manual fallback** in `ablm/model/layers/attention.py`.
-  Don't reintroduce a kernel registry / explicit flash-attn integration: SDPA
-  already auto-selects the fused backend.
+- **Attention is SDPA, opt-in FlashAttention-2 via HF, and a manual fallback** in
+  `ablm/model/layers/attention.py`, selected by HF's standard `attn_implementation`.
+  Add kernels through HF's attention integrations, not a forge kernel registry. Don't
+  assume SDPA picks a flash kernel: with a padding mask it runs memory-efficient
+  attention, and the two differ in training dynamics (early-layer attention logits stay
+  saturated under memory-efficient attention; one 350M run diverged at ~210k).
 - **All public model classes in `modeling_ablm.py`** (standard HF convention);
   the architecture building blocks live in the `model/layers/` subpackage.
 - **Loading is register-based** (BALM-style): `import ablm` registers the classes
@@ -139,7 +145,7 @@ src/ablm/
 │   ├── presets.py              # muP preset ladder (35m/150m/300m/600m)
 │   └── layers/                 # architecture building blocks (the screen surface)
 │       ├── norm.py masking.py rope.py embedding.py ffn.py
-│       ├── attention.py        # AblmAttention: SDPA + manual-softmax fallback
+│       ├── attention.py        # AblmAttention: SDPA / FA2 (opt-in) + manual-softmax fallback
 │       └── transformer.py      # AblmBlock + AblmStack
 └── training/                   # one subpackage per Trainer wiring point
     ├── optim/                  # -> optimizers=
