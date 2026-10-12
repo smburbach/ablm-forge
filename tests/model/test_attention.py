@@ -326,3 +326,50 @@ def test_attention_bias_param_delta_is_four_vectors_per_layer():
     n_off = sum(p.numel() for p in off.parameters())
     n_on = sum(p.numel() for p in on.parameters())
     assert n_on - n_off == 4 * 32 * 3
+
+
+# ---------------------------------------------------------------------------
+# Training-mode warning for the SDPA path on CUDA
+# ---------------------------------------------------------------------------
+
+_SDPA_WARNING = "attn_implementation='sdpa'"
+
+
+@pytest.fixture
+def fresh_sdpa_warning():
+    from ablm.model.modeling_ablm import _warn_sdpa_training
+
+    _warn_sdpa_training.cache_clear()
+    yield
+    _warn_sdpa_training.cache_clear()
+
+
+def _tiny_mlm(attn_implementation: str = "sdpa") -> AblmForMaskedLM:
+    cfg = AblmConfig(
+        hidden_size=32,
+        num_attention_heads=4,
+        num_hidden_layers=1,
+        intermediate_size=64,
+        attn_implementation=attn_implementation,
+    )
+    return AblmForMaskedLM(cfg)
+
+
+def test_train_on_cpu_under_sdpa_does_not_warn(fresh_sdpa_warning, caplog):
+    model = _tiny_mlm()
+    with caplog.at_level("WARNING", logger="ablm.model.modeling_ablm"):
+        model.train()
+    assert model.training
+    assert _SDPA_WARNING not in caplog.text
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
+def test_train_on_cuda_under_sdpa_warns_once(fresh_sdpa_warning, caplog):
+    model = _tiny_mlm().cuda()
+    with caplog.at_level("WARNING", logger="ablm.model.modeling_ablm"):
+        model.eval()
+        assert _SDPA_WARNING not in caplog.text
+        model.train()
+        model.train()
+    assert model.training
+    assert caplog.text.count(_SDPA_WARNING) == 1

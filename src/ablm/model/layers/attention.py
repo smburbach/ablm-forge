@@ -5,7 +5,9 @@ key-padding mask every batch carries, SDPA cannot use its flash backend (it reje
 any `attn_mask`) or cuDNN (it needs dropout in 1/16 steps), so on CUDA it runs the
 memory-efficient kernel; CPU uses the math kernel. `attn_implementation=
 "flash_attention_2"` opts into HF's `flash_attention_forward` instead (unpad ->
-`flash_attn_varlen_func` -> re-pad), the kernel stock ESM2 trains with. A manual
+`flash_attn_varlen_func` -> re-pad), the kernel stock ESM2 trains with. Train with it:
+under the memory-efficient kernel early-layer attention logits stayed saturated and one
+350M run diverged, so a CUDA model put in train mode under SDPA logs a warning. A manual
 fp32 softmax runs for `output_attentions=True`, which neither fused path exposes.
 """
 
