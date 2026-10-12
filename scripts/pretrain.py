@@ -24,6 +24,7 @@ from pathlib import Path
 
 from datasets import load_dataset
 from transformers import DataCollatorForLanguageModeling, Trainer, TrainingArguments
+from transformers.utils import is_flash_attn_2_available
 
 from ablm import AblmConfig, AblmForMaskedLM, AblmTokenizerFast
 from ablm.training.optim import MUON_OPTIM, build_muon_optimizer
@@ -76,11 +77,22 @@ def parse_args() -> argparse.Namespace:
     # Hardware / memory
     p.add_argument("--bf16", action="store_true")
     p.add_argument("--gradient-checkpointing", action="store_true")
+    p.add_argument(
+        "--attn-implementation",
+        choices=["flash_attention_2", "sdpa"],
+        default=None,
+        help="default: flash_attention_2 under --bf16 when flash_attn is installed, else sdpa "
+        "(SDPA's memory-efficient kernel destabilized a 350M run; see AGENTS.md)",
+    )
     return p.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    attn_implementation = args.attn_implementation or (
+        "flash_attention_2" if args.bf16 and is_flash_attn_2_available() else "sdpa"
+    )
+    print(f"attn_implementation={attn_implementation}")
 
     model = AblmForMaskedLM(
         AblmConfig(
@@ -88,6 +100,7 @@ def main() -> None:
             num_hidden_layers=args.num_layers,
             num_attention_heads=args.num_heads,
             max_position_embeddings=args.max_length,
+            attn_implementation=attn_implementation,
         )
     )
 

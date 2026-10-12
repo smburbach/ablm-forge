@@ -6,7 +6,10 @@ the architecture building blocks live in `.layers` and are imported here.
 
 from __future__ import annotations
 
+import functools
+import logging
 import math
+from typing import Self
 
 import torch
 from torch import nn
@@ -33,6 +36,17 @@ __all__ = [
     "AblmForTokenClassification",
     "AblmMLMHead",
 ]
+
+logger = logging.getLogger(__name__)
+
+
+@functools.cache
+def _warn_sdpa_training() -> None:
+    logger.warning(
+        "Training on CUDA with attn_implementation='sdpa' runs SDPA's memory-efficient kernel, "
+        "which left early attention heads saturated and diverged one 350M run. Train with "
+        "attn_implementation='flash_attention_2' (bf16/fp16) unless SDPA is the control."
+    )
 
 
 class AblmPreTrainedModel(PreTrainedModel):
@@ -79,6 +93,17 @@ class AblmPreTrainedModel(PreTrainedModel):
             if getattr(module, "bias", None) is not None:
                 # nn.Module.__getattr__ types `.bias` as Tensor | Module; it is a Tensor here.
                 nn.init.zeros_(module.bias)  # ty: ignore[invalid-argument-type]
+
+    def train(self, mode: bool = True) -> Self:
+        """Set training mode; warn once if a CUDA model will train through SDPA.
+
+        With forge's key-padding mask, SDPA runs its memory-efficient kernel on CUDA. Under it
+        early-layer attention logits stay saturated through training and one 350M run diverged,
+        while every `flash_attention_2` run relaxed them (ablm-sweeps-eval `14_rerun/06_forge`).
+        """
+        if mode and self.config._attn_implementation == "sdpa" and self.device.type == "cuda":
+            _warn_sdpa_training()
+        return super().train(mode)
 
     # ------------------------------------------------------------------
     # Gradient checkpointing — propagate the toggle to every AblmBlock.

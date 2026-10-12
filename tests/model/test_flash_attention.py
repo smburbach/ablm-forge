@@ -170,3 +170,13 @@ def test_flash_attention_2_pilot_train_and_eval(rows: list[dict], tmp_path: Path
     assert result.global_step == 6
     assert torch.isfinite(torch.tensor(result.training_loss))
     assert torch.isfinite(torch.tensor(metrics["eval_loss"]))
+
+
+def test_flash_attention_2_train_does_not_warn(caplog: pytest.LogCaptureFixture) -> None:
+    from ablm.model.modeling_ablm import _warn_sdpa_training
+
+    _warn_sdpa_training.cache_clear()
+    model = AblmForMaskedLM(_config("flash_attention_2")).cuda()
+    with caplog.at_level("WARNING", logger="ablm.model.modeling_ablm"):
+        model.train()
+    assert "attn_implementation='sdpa'" not in caplog.text
