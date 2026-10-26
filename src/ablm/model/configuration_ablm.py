@@ -55,7 +55,7 @@ class AblmConfig(PretrainedConfig):
         initializer_range: float = 0.02,
         classifier_pool: Literal["mean", "cls"] = "mean",
         classifier_dropout: float = 0.0,
-        num_labels: int = 2,
+        num_labels: int | None = None,
         pre_head_norm: bool = False,
         gradient_checkpointing: bool = False,
         pad_token_id: int = 1,
@@ -114,10 +114,10 @@ class AblmConfig(PretrainedConfig):
         self._resolve_derived_fields()
         self._validate()
 
-        # `num_labels` is a property on PretrainedConfig backed by
-        # `id2label`/`label2id`; forward through kwargs (not as a direct attr)
-        # so the base class's bookkeeping stays consistent.
-        kwargs.setdefault("num_labels", int(num_labels))
+        # Forward only an explicit value: on reload `id2label` sizes the head, and
+        # transformers 5.17 lets a defaulted `num_labels` override it.
+        if num_labels is not None:
+            kwargs.setdefault("num_labels", int(num_labels))
 
         super().__init__(
             pad_token_id=pad_token_id,
