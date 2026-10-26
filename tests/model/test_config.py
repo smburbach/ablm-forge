@@ -197,6 +197,17 @@ def test_save_and_from_pretrained_roundtrip_preserves_fields(tmp_path: Path):
     assert restored.tie_word_embeddings is True
 
 
+@pytest.mark.parametrize("num_labels", [None, 1, 2, 3, 7])
+def test_num_labels_roundtrip(num_labels: int | None, tmp_path: Path):
+    cfg = AblmConfig() if num_labels is None else AblmConfig(num_labels=num_labels)
+    expected = 2 if num_labels is None else num_labels
+    assert cfg.num_labels == expected
+    cfg.save_pretrained(tmp_path)
+    restored = AblmConfig.from_pretrained(tmp_path)
+    assert restored.num_labels == expected
+    assert len(restored.id2label) == expected
+
+
 def test_save_pretrained_writes_token_ids(tmp_path: Path):
     cfg = AblmConfig()
     cfg.save_pretrained(tmp_path)
