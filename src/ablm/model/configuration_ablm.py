@@ -72,14 +72,8 @@ class AblmConfig(PretrainedConfig):
         self.hidden_size = int(hidden_size)
         self.num_hidden_layers = int(num_hidden_layers)
         self.num_attention_heads = int(num_attention_heads)
-        self.head_dim = head_dim if head_dim is None else int(head_dim)
-        self.intermediate_size = (
-            intermediate_size if intermediate_size is None else int(intermediate_size)
-        )
         self.max_position_embeddings = int(max_position_embeddings)
         self.rope_theta = float(rope_theta)
-        self.rope_dim = rope_dim if rope_dim is None else int(rope_dim)
-        self.nope_dim = int(nope_dim)
         self.norm_type = norm_type
         self.norm_eps = float(norm_eps)
         self.norm_bias = bool(norm_bias)
@@ -89,6 +83,17 @@ class AblmConfig(PretrainedConfig):
         self.residual_scaling = residual_scaling
         self.init_scale_output_projections = bool(init_scale_output_projections)
         self.ffn_activation = ffn_activation
+        self.head_dim = self._default_head_dim() if head_dim is None else int(head_dim)
+        self.intermediate_size = (
+            self._default_intermediate_size()
+            if intermediate_size is None
+            else int(intermediate_size)
+        )
+        if rope_dim is None:
+            # Default to full RoPE on every head channel.
+            rope_dim, nope_dim = self.head_dim, 0
+        self.rope_dim = int(rope_dim)
+        self.nope_dim = int(nope_dim)
         self.ffn_bias = bool(ffn_bias)
         self.token_dropout = bool(token_dropout)
         self.attention_bias = bool(attention_bias)
@@ -119,11 +124,13 @@ class AblmConfig(PretrainedConfig):
         if num_labels is not None:
             kwargs.setdefault("num_labels", int(num_labels))
 
+        # transformers >=5.4 declares only dataclass fields in the signature; these reach
+        # `__post_init__` via **kwargs and are still set as attributes.
         super().__init__(
-            pad_token_id=pad_token_id,
-            bos_token_id=bos_token_id,
-            eos_token_id=eos_token_id,
-            tie_word_embeddings=tie_word_embeddings,
+            pad_token_id=pad_token_id,  # ty: ignore[unknown-argument]
+            bos_token_id=bos_token_id,  # ty: ignore[unknown-argument]
+            eos_token_id=eos_token_id,  # ty: ignore[unknown-argument]
+            tie_word_embeddings=tie_word_embeddings,  # ty: ignore[unknown-argument]
             **kwargs,
         )
 
@@ -134,26 +141,22 @@ class AblmConfig(PretrainedConfig):
     # Derived-field resolution
     # ------------------------------------------------------------------
 
+    def _default_head_dim(self) -> int:
+        """`hidden_size / num_attention_heads`, the default when `head_dim` is unset."""
+        if self.num_attention_heads == 0:
+            raise ValueError("num_attention_heads must be > 0.")
+        return self.hidden_size // self.num_attention_heads
+
+    def _default_intermediate_size(self) -> int:
+        """The FFN width used when `intermediate_size` is unset."""
+        if self.ffn_activation == "gelu":
+            # Non-gated MLP (2 matrices): the classic 4x expansion.
+            return round_up_to(4 * self.hidden_size, 256)
+        # Gated (3 matrices): ~8/3 * D keeps params matched to a 4x MLP.
+        return round_up_to(int(8 * self.hidden_size / 3), 256)
+
     def _resolve_derived_fields(self) -> None:
-        """Fill in any `None` derived fields from the source dimensions."""
-        if self.head_dim is None:
-            if self.num_attention_heads == 0:
-                raise ValueError("num_attention_heads must be > 0.")
-            self.head_dim = self.hidden_size // self.num_attention_heads
-
-        if self.intermediate_size is None:
-            if self.ffn_activation == "gelu":
-                # Non-gated MLP (2 matrices): the classic 4x expansion.
-                self.intermediate_size = round_up_to(4 * self.hidden_size, 256)
-            else:
-                # Gated (3 matrices): ~8/3 * D keeps params matched to a 4x MLP.
-                self.intermediate_size = round_up_to(int(8 * self.hidden_size / 3), 256)
-
-        if self.rope_dim is None:
-            # Default to full RoPE on every head channel.
-            self.rope_dim = self.head_dim
-            self.nope_dim = 0
-
+        """Fill in the muP multipliers from the source dimensions."""
         if self.mup_enabled and self.mup_base_hidden_size:
             ratio = self.mup_base_hidden_size / self.hidden_size
             self.mup_output_mult = ratio

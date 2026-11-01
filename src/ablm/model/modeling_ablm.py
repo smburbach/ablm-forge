@@ -275,7 +275,10 @@ class AblmForSequenceClassification(AblmPreTrainedModel):
 
     def __init__(self, config: AblmConfig) -> None:
         super().__init__(config)
-        self.num_labels = config.num_labels
+        num_labels = config.num_labels
+        if num_labels is None:
+            raise ValueError("A classification head needs `num_labels` (or `id2label`) set.")
+        self.num_labels = num_labels
         self.ablm = AblmModel(config)
         if config.pre_head_norm:
             self.pre_head_norm: nn.Module = make_norm(
@@ -287,7 +290,7 @@ class AblmForSequenceClassification(AblmPreTrainedModel):
         else:
             self.pre_head_norm = nn.Identity()
         self.dropout = nn.Dropout(config.classifier_dropout)
-        self.classifier = nn.Linear(config.hidden_size, config.num_labels, bias=True)
+        self.classifier = nn.Linear(config.hidden_size, self.num_labels, bias=True)
         self.post_init()
 
     def get_input_embeddings(self) -> nn.Module:
@@ -384,7 +387,10 @@ class AblmForTokenClassification(AblmPreTrainedModel):
 
     def __init__(self, config: AblmConfig) -> None:
         super().__init__(config)
-        self.num_labels = config.num_labels
+        num_labels = config.num_labels
+        if num_labels is None:
+            raise ValueError("A classification head needs `num_labels` (or `id2label`) set.")
+        self.num_labels = num_labels
         self.ablm = AblmModel(config)
         if config.pre_head_norm:
             self.pre_head_norm: nn.Module = make_norm(
@@ -396,7 +402,7 @@ class AblmForTokenClassification(AblmPreTrainedModel):
         else:
             self.pre_head_norm = nn.Identity()
         self.dropout = nn.Dropout(config.classifier_dropout)
-        self.classifier = nn.Linear(config.hidden_size, config.num_labels, bias=True)
+        self.classifier = nn.Linear(config.hidden_size, self.num_labels, bias=True)
         self.post_init()
 
     def get_input_embeddings(self) -> nn.Module:
