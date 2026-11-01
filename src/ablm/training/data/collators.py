@@ -142,7 +142,7 @@ def _pad_paired_batch(
     clean = [{k: v for k, v in ex.items() if k not in drop} for ex in examples]
 
     batch = tokenizer.pad(clean, return_tensors="pt", pad_to_multiple_of=pad_to_multiple_of)
-    max_len = batch["input_ids"].shape[1]  # ty: ignore[unresolved-attribute]  # return_tensors="pt"
+    max_len = batch["input_ids"].shape[1]  # return_tensors="pt"
 
     padded = torch.full((len(region_masks), max_len), IGNORE, dtype=torch.long)
     for i, m in enumerate(region_masks):

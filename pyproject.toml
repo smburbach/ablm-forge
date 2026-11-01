@@ -24,11 +24,11 @@ classifiers = [
 dependencies = [
     # Upper bounds keep CI on the verified-good toolchain. torch>=2.11 ships
     # torch.optim.Muon and the FlashAttention backend via SDPA; FSDP2 is stable
-    # from 2.6+. transformers >=5.4 shifts PretrainedConfig attribute typing so
-    # `ty` flags resolved-Optional config fields. Bump deliberately after
-    # re-running `ty check src/` + the test suite.
-    "torch>=2.11,<2.13",
-    "transformers>=4.48,<5.4",
+    # from 2.6+. Verified on torch 2.13 / transformers 5.17 (the lab's
+    # deeplearning image). Bump deliberately after re-running `ty check src/` +
+    # the test suite.
+    "torch>=2.11,<2.14",
+    "transformers>=4.48,<5.18",
     "accelerate>=0.34",  # transformers' FSDP2 backend plumbing
     "tokenizers>=0.20",
 ]
