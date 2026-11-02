@@ -14,9 +14,20 @@ from transformers.trainer_utils import get_last_checkpoint
 if TYPE_CHECKING:
     from transformers import TrainingArguments
 
-S3_ENDPOINT = "http://cwlota.com"
+# CoreWeave's in-cluster endpoint; off CoreWeave set S3_ENDPOINT_URL (s5cmd's own variable),
+# e.g. https://cwobject.com
+DEFAULT_S3_ENDPOINT = "http://cwlota.com"
 # Tried in order; the second is the escape hatch when writes are suspended for one AZ.
 S3_BUCKETS = ("brineylab-eu", "brineylab-us-east")
+
+
+def s3_endpoint() -> str:
+    """The object-storage endpoint, read at call time like the job prefix.
+
+    Returns:
+        `S3_ENDPOINT_URL` if set and non-empty, else `DEFAULT_S3_ENDPOINT`.
+    """
+    return os.environ.get("S3_ENDPOINT_URL") or DEFAULT_S3_ENDPOINT
 
 
 def s3_job_uri(bucket: str) -> str:
@@ -68,7 +79,7 @@ def mirror_to_object_storage() -> bool:
                 [
                     "s5cmd",
                     "--endpoint-url",
-                    S3_ENDPOINT,
+                    s3_endpoint(),
                     "sync",
                     "--exclude",
                     "*/.*",
@@ -124,7 +135,7 @@ def restore_from_object_storage(output_dir: str) -> None:
         job_uri = s3_job_uri(bucket)
         print(f"Restoring checkpoints from {job_uri}", flush=True)
         subprocess.run(
-            ["s5cmd", "--endpoint-url", S3_ENDPOINT, "sync", f"{job_uri}/*", f"{work_dir}/"],
+            ["s5cmd", "--endpoint-url", s3_endpoint(), "sync", f"{job_uri}/*", f"{work_dir}/"],
             check=False,
             stdout=sys.stdout,
             stderr=sys.stderr,

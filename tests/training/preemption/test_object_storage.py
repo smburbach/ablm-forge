@@ -8,13 +8,14 @@ import pytest
 from transformers import TrainingArguments
 
 from ablm.training.preemption.object_storage import (
-    S3_ENDPOINT,
+    DEFAULT_S3_ENDPOINT,
     discard_torn_checkpoints,
     latest_complete_checkpoint,
     mirror_to_object_storage,
     on_cluster,
     restore_from_object_storage,
     resume_checkpoint,
+    s3_endpoint,
     s3_job_uri,
 )
 
@@ -37,6 +38,21 @@ def _checkpoint(parent: Path, step: int, torn: bool = False) -> Path:
 
 def test_s3_job_uri_uses_user_and_job_dir(cluster_env: Path) -> None:
     assert s3_job_uri("brineylab-eu") == "s3://brineylab-eu/u/job1"
+
+
+def test_endpoint_defaults_to_in_cluster(cluster_env: Path) -> None:
+    assert s3_endpoint() == DEFAULT_S3_ENDPOINT == "http://cwlota.com"
+
+
+def test_endpoint_follows_s3_endpoint_url(
+    fake_s5cmd: FakeS5cmd, cluster_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("S3_ENDPOINT_URL", "https://cwobject.com")
+    assert mirror_to_object_storage() is True
+    restore_from_object_storage(str(cluster_env))
+    calls = fake_s5cmd.calls()
+    assert len(calls) == 3
+    assert all(call[1:3] == ["--endpoint-url", "https://cwobject.com"] for call in calls)
 
 
 def test_on_cluster_false_off_slurm(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -74,7 +90,7 @@ def test_mirror_first_bucket_first_try(fake_s5cmd: FakeS5cmd, cluster_env: Path)
         [
             "s5cmd",
             "--endpoint-url",
-            S3_ENDPOINT,
+            DEFAULT_S3_ENDPOINT,
             "sync",
             "--exclude",
             "*/.*",
@@ -145,7 +161,7 @@ def test_restore_reads_every_bucket_newest_in_second(
         [
             "s5cmd",
             "--endpoint-url",
-            S3_ENDPOINT,
+            DEFAULT_S3_ENDPOINT,
             "sync",
             f"s3://{bucket}/u/job1/*",
             f"{cluster_env}/",
