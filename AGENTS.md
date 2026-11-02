@@ -106,7 +106,7 @@ gated variants.
   the subpackage (`from ablm.training.data import ...`), never from its modules, so
   the internal split stays rearrangeable.
 - **`training/preemption/` is a tracked port** of coreweave-docs
-  `model-training/single-run/jit/preemption.py` (currently `d748711`) plus an off-cluster
+  `model-training/single-run/jit/preemption.py` (currently `3d1728d`) plus an off-cluster
   guard. Re-port upstream changes; don't hand-edit — forks of this code have drifted
   silently before.
 - **Keep a contract's producer and consumer in the same subpackage.**

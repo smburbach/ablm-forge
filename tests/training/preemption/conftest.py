@@ -113,6 +113,7 @@ def cluster_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("JOB_WORK_DIR", str(work_dir))
     monkeypatch.delenv("SLURM_JOB_ID", raising=False)
     monkeypatch.delenv("SLURM_RESTART_COUNT", raising=False)
+    monkeypatch.delenv("S3_ENDPOINT_URL", raising=False)
     return work_dir
 
 
