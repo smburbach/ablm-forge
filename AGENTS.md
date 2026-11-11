@@ -67,7 +67,7 @@ gated variants.
 > (profiled on B200, ablm-sweeps job 25132). `attn_implementation="flash_attention_2"`
 > opts into HF's `flash_attention_forward` (unpadded `flash_attn_varlen_func`), the
 > kernel stock ESM2 trains with; it needs bf16/fp16 inputs and raises otherwise. A
-> manual fp32-softmax path runs only for `output_attentions=True`. **Train with
+> manual fp32-softmax path runs under `"eager"` and for `output_attentions=True`. **Train with
 > `flash_attention_2`**: SDPA stays the library default for portability (CPU tests,
 > fp32, no flash-attn build), but under its memory-efficient kernel early-layer attention
 > logits stayed saturated through 500k steps and one 350M run diverged, while every FA2

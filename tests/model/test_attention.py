@@ -291,6 +291,69 @@ def test_sdpa_and_manual_paths_agree():
     assert torch.allclose(out_sdpa, out_manual, rtol=1e-4, atol=1e-5)
 
 
+def test_eager_takes_the_manual_path_not_sdpa(monkeypatch):
+    """attn_implementation='eager' runs the manual softmax; it must never fall through to SDPA."""
+    cfg = _config(attention_dropout=0.1)
+    cfg._attn_implementation = "eager"
+    attn = AblmAttention(cfg).train()
+
+    def _no_sdpa(*args, **kwargs):
+        raise AssertionError("eager attention called F.scaled_dot_product_attention")
+
+    monkeypatch.setattr(torch.nn.functional, "scaled_dot_product_attention", _no_sdpa)
+    calls = []
+    manual = attn._manual_attention
+    monkeypatch.setattr(attn, "_manual_attention", lambda *a: calls.append(1) or manual(*a))
+    out, w = attn(torch.randn(2, 6, 32), _ones_mask(2, 6))
+    assert out.shape == (2, 6, 32)
+    assert w is None
+    assert calls == [1]
+
+
+def test_eager_matches_sdpa_in_eval():
+    torch.manual_seed(0)
+    cfg = _config()
+    attn = AblmAttention(cfg).eval()
+    x = torch.randn(2, 8, 32)
+    mask = torch.tensor([[1, 1, 1, 1, 1, 1, 0, 0], [1, 1, 1, 1, 1, 0, 0, 0]], dtype=torch.long)
+    with torch.no_grad():
+        cfg._attn_implementation = "sdpa"
+        out_sdpa, _ = attn(x, mask)
+        cfg._attn_implementation = "eager"
+        out_eager, _ = attn(x, mask)
+    assert torch.allclose(out_sdpa, out_eager, rtol=1e-4, atol=1e-5)
+
+
+def test_unknown_attn_implementation_raises():
+    cfg = _config()
+    cfg._attn_implementation = "flex_attention"
+    with pytest.raises(ValueError, match="not supported"):
+        AblmAttention(cfg)(torch.randn(1, 4, 32), _ones_mask(1, 4))
+
+
+def test_model_built_with_eager_never_calls_sdpa(monkeypatch):
+    """End to end through AblmForMaskedLM: HF's resolved 'eager' reaches the attention layers."""
+    cfg = AblmConfig(
+        vocab_size=33,
+        hidden_size=32,
+        num_attention_heads=4,
+        num_hidden_layers=2,
+        intermediate_size=64,
+        max_position_embeddings=32,
+    )
+    model = AblmForMaskedLM._from_config(cfg, attn_implementation="eager")
+    assert model.config._attn_implementation == "eager"
+
+    def _no_sdpa(*args, **kwargs):
+        raise AssertionError("eager model called F.scaled_dot_product_attention")
+
+    monkeypatch.setattr(torch.nn.functional, "scaled_dot_product_attention", _no_sdpa)
+    ids = torch.randint(4, 29, (2, 10))
+    out = model(input_ids=ids, attention_mask=torch.ones_like(ids), labels=ids)
+    out.loss.backward()
+    assert torch.isfinite(out.loss)
+
+
 # ---------------------------------------------------------------------------
 # attention_bias
 # ---------------------------------------------------------------------------

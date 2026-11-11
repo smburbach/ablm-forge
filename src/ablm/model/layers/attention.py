@@ -8,7 +8,8 @@ memory-efficient kernel; CPU uses the math kernel. `attn_implementation=
 `flash_attn_varlen_func` -> re-pad), the kernel stock ESM2 trains with. Train with it:
 under the memory-efficient kernel early-layer attention logits stayed saturated and one
 350M run diverged, so a CUDA model put in train mode under SDPA logs a warning. A manual
-fp32 softmax runs for `output_attentions=True`, which neither fused path exposes.
+fp32 softmax runs under `attn_implementation="eager"` and for `output_attentions=True`,
+which neither fused path exposes.
 """
 
 from __future__ import annotations
@@ -161,9 +162,17 @@ class AblmAttention(nn.Module):
 
         dropout_p = self.attention_dropout if self.training else 0.0
         attn = None
-        if output_attentions:
+        impl = getattr(self.config, "_attn_implementation", None)
+        if impl not in (None, "sdpa", "eager", "flash_attention_2"):
+            raise ValueError(
+                f"attn_implementation={impl!r} is not supported; use 'sdpa', 'eager' or "
+                "'flash_attention_2'."
+            )
+        if output_attentions or impl == "eager":
             out, attn = self._manual_attention(q, k, v, attention_mask)
-        elif getattr(self.config, "_attn_implementation", None) == "flash_attention_2":
+            if not output_attentions:
+                attn = None
+        elif impl == "flash_attention_2":
             if q.dtype not in (torch.bfloat16, torch.float16):
                 raise ValueError(
                     f"flash_attention_2 needs bfloat16 or float16 inputs, got {q.dtype}; "
