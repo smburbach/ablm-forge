@@ -67,7 +67,7 @@ Trainer(model=model, args=args, train_dataset=ds, data_collator=collator).train(
 
 - **Attention** — just `F.scaled_dot_product_attention`, which auto-selects the
   fastest fused backend (FlashAttention / cuDNN / mem-efficient) at runtime. A
-  manual fp32-softmax path runs only when you request `output_attentions=True`.
+  manual fp32-softmax path runs under `attn_implementation="eager"` or when you request `output_attentions=True`.
   Nothing to configure.
 - **Optimizer** — HF-native ones are `TrainingArguments(optim="adamw_torch" | …)`.
   Muon (2D-hidden `DistributedMuon` + AdamW for the rest) is built with
